@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const supabase = require('../config/db');
 
 // Página de ventas
 router.get('/', async (req, res) => {
   if (!req.session.user) return res.redirect('/');
   try {
-    const [clientes] = await db.query('SELECT * FROM cliente');
-    const [medicamentos] = await db.query('SELECT * FROM medicamento');
+    const { data: clientes, error: clientesError } = await supabase.from('cliente').select('*');
+    const { data: medicamentos, error: medicamentosError } = await supabase.from('medicamento').select('*');
+    if (clientesError || medicamentosError) throw clientesError || medicamentosError;
     res.render('ventas', { clientes, medicamentos });
   } catch (err) {
     console.error(err);
@@ -29,30 +30,34 @@ router.post('/process', async (req, res) => {
     if (!Array.isArray(itemsArray) || itemsArray.length === 0) {
       return res.send('No hay items en la venta');
     }
+
     const id_usuario = req.session.user.id;
     const serie = tipo === 'boleta' ? `B001-${Date.now()}` : `F001-${Date.now()}`;
-    const conn = await db.getConnection();
-    await conn.beginTransaction();
-    try {
-      const [compResult] = await conn.query(
-        'INSERT INTO comprobante (serie, tipo, id_cliente, id_usuario) VALUES (?, ?, ?, ?)',
-        [serie, tipo, id_cliente, id_usuario]
-      );
-      const id_comprobante = compResult.insertId;
-      for (const item of itemsArray) {
-        await conn.query(
-          'INSERT INTO detalle_venta (id_comprobante, id_medicamento, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
-          [id_comprobante, item.id_medicamento, item.cantidad, item.precio_unitario]
-        );
-      }
-      await conn.commit();
-      res.redirect(`/comprobante?id=${id_comprobante}`);
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
+
+    const { data: comprobante, error: comprobanteError } = await supabase
+      .from('comprobante')
+      .insert({ serie, tipo, id_cliente, id_usuario })
+      .select()
+      .single();
+
+    if (comprobanteError || !comprobante) {
+      throw comprobanteError || new Error('No se pudo crear el comprobante');
     }
+
+    const detalleRows = itemsArray.map((item) => ({
+      id_comprobante: comprobante.id_comprobante,
+      id_medicamento: item.id_medicamento,
+      cantidad: item.cantidad,
+      precio_unitario: item.precio_unitario
+    }));
+
+    const { error: detalleError } = await supabase.from('detalle_venta').insert(detalleRows);
+    if (detalleError) {
+      await supabase.from('comprobante').delete().eq('id_comprobante', comprobante.id_comprobante);
+      throw detalleError;
+    }
+
+    res.redirect(`/comprobante?id=${comprobante.id_comprobante}`);
   } catch (err) {
     console.error(err);
     res.send('Error al procesar venta');

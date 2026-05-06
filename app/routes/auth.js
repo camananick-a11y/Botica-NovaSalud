@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const db = require('../config/db');
+const supabase = require('../config/db');
 
 // Login page
 router.get('/', (req, res) => {
@@ -13,19 +13,26 @@ router.get('/', (req, res) => {
 router.post('/login', async (req, res) => {
   const { nombre, password } = req.body;
   try {
-    const [rows] = await db.query(
-      'SELECT u.*, c.nombre as cargo FROM usuario u JOIN cargo c ON u.id_cargo = c.id_cargo WHERE u.nombre = ?',
-      [nombre]
-    );
-    if (rows.length === 0) {
+    const { data: user, error } = await supabase
+      .from('usuario')
+      .select('*, cargo(nombre)')
+      .eq('nombre', nombre)
+      .single();
+
+    if (error || !user) {
       return res.render('login', { error: 'Usuario no encontrado' });
     }
-    const user = rows[0];
+
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
       return res.render('login', { error: 'Contraseña incorrecta' });
     }
-    req.session.user = { id: user.id_usuario, nombre: user.nombre, cargo: user.cargo };
+
+    req.session.user = {
+      id: user.id_usuario,
+      nombre: user.nombre,
+      cargo: user.cargo?.nombre || null
+    };
     res.redirect('/menu');
   } catch (err) {
     console.error(err);
