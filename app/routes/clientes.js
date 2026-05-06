@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const supabase = require('../config/db');
 
 // Listar clientes
 router.get('/', async (req, res) => {
   if (!req.session.user) return res.redirect('/');
   try {
-    const [clientes] = await db.query('SELECT * FROM cliente');
+    const { data: clientes, error } = await supabase.from('cliente').select('*');
+    if (error) throw error;
     res.render('clientes', { clientes });
   } catch (err) {
     console.error(err);
@@ -18,7 +19,8 @@ router.get('/', async (req, res) => {
 router.post('/add', async (req, res) => {
   const { nombre } = req.body;
   try {
-    await db.query('INSERT INTO cliente (nombre) VALUES (?)', [nombre]);
+    const { error } = await supabase.from('cliente').insert({ nombre });
+    if (error) throw error;
     res.redirect('/clientes');
   } catch (err) {
     console.error(err);
@@ -29,7 +31,8 @@ router.post('/add', async (req, res) => {
 // Eliminar cliente
 router.get('/delete/:id', async (req, res) => {
   try {
-    await db.query('DELETE FROM cliente WHERE id_cliente = ?', [req.params.id]);
+    const { error } = await supabase.from('cliente').delete().eq('id_cliente', req.params.id);
+    if (error) throw error;
     res.redirect('/clientes');
   } catch (err) {
     console.error(err);
