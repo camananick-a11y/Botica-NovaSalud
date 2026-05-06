@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+app/node_modules/
+
+# Environment variables
+.env
+app/.env
+
+# Build/output
+dist/
+build/
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Nodemon
+nodemon.json
