@@ -3,6 +3,7 @@ from django.db import models
 class Laboratorio(models.Model):
     id_laboratorio = models.BigAutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'laboratorio'
@@ -14,6 +15,7 @@ class Laboratorio(models.Model):
 class Categoria(models.Model):
     id_categoria = models.BigAutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'categoria'
@@ -25,6 +27,7 @@ class Categoria(models.Model):
 class Presentacion(models.Model):
     id_presentacion = models.BigAutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'presentacion'
@@ -36,6 +39,7 @@ class Presentacion(models.Model):
 class Unidad(models.Model):
     id_unidad = models.BigAutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'unidad'
@@ -52,6 +56,7 @@ class Medicamento(models.Model):
     id_categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, db_column='id_categoria')
     id_presentacion = models.ForeignKey(Presentacion, on_delete=models.PROTECT, db_column='id_presentacion')
     id_unidad = models.ForeignKey(Unidad, on_delete=models.PROTECT, db_column='id_unidad')
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'medicamento'
@@ -64,6 +69,7 @@ class StockMedicamento(models.Model):
     id_stock = models.BigAutoField(primary_key=True)
     id_medicamento = models.ForeignKey(Medicamento, on_delete=models.CASCADE, db_column='id_medicamento')
     cantidad = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'stock_medicamento'
