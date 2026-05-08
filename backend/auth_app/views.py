@@ -1,7 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from .models import Usuario, Cargo
 from .serializers import (
@@ -11,20 +10,16 @@ from .serializers import (
     LoginSerializer
 )
 
-
 class CargoViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar cargos de empleados"""
     queryset = Cargo.objects.all()
     serializer_class = CargoSerializer
-    filterset_fields = ['nombre', 'created_at']
     search_fields = ['nombre']
-
 
 class UsuarioViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar usuarios"""
     queryset = Usuario.objects.all()
-    filterset_fields = ['activo', 'cargo', 'date_joined']
-    search_fields = ['username', 'email', 'first_name', 'last_name']
+    search_fields = ['usuario', 'nombre']
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -38,7 +33,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         usuario = authenticate(
-            username=serializer.validated_data['username'],
+            username=serializer.validated_data['usuario'],
             password=serializer.validated_data['password']
         )
         
@@ -49,12 +44,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             )
         
         return Response({
-            'id': usuario.id,
-            'username': usuario.username,
-            'email': usuario.email,
-            'first_name': usuario.first_name,
-            'last_name': usuario.last_name,
-            'cargo': usuario.cargo.nombre if usuario.cargo else None,
+            'id_usuario': usuario.id_usuario,
+            'usuario': usuario.usuario,
+            'nombre': usuario.nombre,
+            'id_cargo': usuario.id_cargo.id_cargo,
+            'cargo_nombre': usuario.id_cargo.nombre if usuario.id_cargo else None,
         }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
@@ -68,4 +62,3 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         
         serializer = UsuarioSerializer(request.user)
         return Response(serializer.data)
-

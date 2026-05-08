@@ -1,38 +1,30 @@
 from rest_framework import serializers
 from .models import Cargo, Usuario
 
-
 class CargoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cargo
-        fields = ['id', 'nombre', 'descripcion', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
-
+        fields = ['id_cargo', 'nombre']
 
 class UsuarioSerializer(serializers.ModelSerializer):
-    cargo_nombre = serializers.CharField(source='cargo.nombre', read_only=True)
+    cargo_nombre = serializers.CharField(source='id_cargo.nombre', read_only=True)
     
     class Meta:
         model = Usuario
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'cargo', 
-                  'cargo_nombre', 'telefono', 'activo', 'date_joined']
-        read_only_fields = ['date_joined']
-
+        fields = ['id_usuario', 'usuario', 'nombre', 'id_cargo', 'cargo_nombre']
 
 class UsuarioCreateUpdateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(write_only=True)
     
     class Meta:
         model = Usuario
-        fields = ['username', 'email', 'first_name', 'last_name', 'cargo', 
-                  'telefono', 'activo', 'password']
+        fields = ['usuario', 'nombre', 'id_cargo', 'password']
     
     def create(self, validated_data):
-        password = validated_data.pop('password', None)
-        usuario = Usuario.objects.create(**validated_data)
-        if password:
-            usuario.set_password(password)
-            usuario.save()
+        password = validated_data.pop('password')
+        usuario = Usuario(**validated_data)
+        usuario.set_password(password)
+        usuario.save()
         return usuario
     
     def update(self, instance, validated_data):
@@ -44,7 +36,6 @@ class UsuarioCreateUpdateSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    usuario = serializers.CharField()
     password = serializers.CharField(write_only=True)
