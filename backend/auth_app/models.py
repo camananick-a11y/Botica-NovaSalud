@@ -4,6 +4,7 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 class Cargo(models.Model):
     id_cargo = models.BigAutoField(primary_key=True)
     nombre = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'cargo'
@@ -31,10 +32,11 @@ class UsuarioManager(BaseUserManager):
 
 
 class Usuario(AbstractBaseUser):
-    id_usuario = models.BigAutoField(primary_key=True, db_column='id')
+    id_usuario = models.BigAutoField(primary_key=True)
     usuario = models.CharField(max_length=150, unique=True)
     nombre = models.CharField(max_length=200)
     id_cargo = models.ForeignKey(Cargo, on_delete=models.PROTECT, db_column='id_cargo')
+    created_at = models.DateTimeField(auto_now_add=True)
 
     objects = UsuarioManager()
 
