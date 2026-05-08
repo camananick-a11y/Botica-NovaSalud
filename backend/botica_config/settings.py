@@ -158,16 +158,17 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend']
 }
 
+# JWT Configuration
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('ACCESS_TOKEN_LIFETIME_MINUTES', 720))), # 12 horas default
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('REFRESH_TOKEN_LIFETIME_DAYS', 7))),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'USER_ID_FIELD': 'id_usuario',   # PK personalizado del modelo Usuario
+    'USER_ID_FIELD': 'id_usuario',
     'USER_ID_CLAIM': 'user_id',
-    'UPDATE_LAST_LOGIN': True,       # Actualizar fecha de último acceso
+    'UPDATE_LAST_LOGIN': True,
 }
 
 
