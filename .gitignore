@@ -23,3 +23,13 @@ Thumbs.db
 
 # Nodemon
 nodemon.json
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+db.sqlite3
+*.sqlite3
+backend/.env
