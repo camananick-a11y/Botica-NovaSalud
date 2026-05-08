@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from .models import Usuario, Cargo
@@ -14,12 +15,18 @@ class CargoViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar cargos de empleados"""
     queryset = Cargo.objects.all()
     serializer_class = CargoSerializer
+    permission_classes = [IsAuthenticated]
     search_fields = ['nombre']
 
 class UsuarioViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar usuarios"""
     queryset = Usuario.objects.all()
     search_fields = ['usuario', 'nombre']
+
+    def get_permissions(self):
+        if self.action == 'login':
+            return [AllowAny()]
+        return [IsAuthenticated()]
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:

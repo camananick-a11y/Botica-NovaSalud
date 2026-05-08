@@ -7,7 +7,7 @@ class Comprobante(models.Model):
     id_comprobante = models.BigAutoField(primary_key=True)
     serie = models.CharField(max_length=20)
     tipo = models.CharField(max_length=20)
-    fecha = models.DateTimeField(auto_now_add=True)
+    fecha = models.DateTimeField(auto_now_add=True, db_column='Fecha')
     total = models.DecimalField(max_digits=12, decimal_places=2)
     id_cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, db_column='id_cliente')
     id_usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT, db_column='id_usuario')
@@ -26,6 +26,7 @@ class DetalleVenta(models.Model):
     cantidad = models.IntegerField()
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'detalle_venta'

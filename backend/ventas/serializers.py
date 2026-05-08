@@ -30,10 +30,21 @@ class ComprobanteCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Comprobante
-        fields = ['serie', 'tipo', 'id_cliente', 'id_usuario', 'detalles']
+        fields = ['serie', 'tipo', 'id_cliente', 'detalles']
         
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles', [])
+        
+        # Validar stock antes de empezar a crear nada
+        for d in detalles_data:
+            medicamento = d['id_medicamento']
+            cantidad = d['cantidad']
+            stock_obj = StockMedicamento.objects.filter(id_medicamento=medicamento).first()
+            
+            if not stock_obj or stock_obj.cantidad < cantidad:
+                raise serializers.ValidationError(
+                    f"Stock insuficiente para {medicamento.nombre}. Disponible: {stock_obj.cantidad if stock_obj else 0}"
+                )
         
         # Calculate total
         total = sum(d['cantidad'] * d['precio_unitario'] for d in detalles_data)
@@ -55,10 +66,9 @@ class ComprobanteCreateSerializer(serializers.ModelSerializer):
                 subtotal=cantidad * detalle_data['precio_unitario']
             )
             
-            # Deduct stock
-            stock_obj = StockMedicamento.objects.filter(id_medicamento=medicamento).first()
-            if stock_obj:
-                stock_obj.cantidad -= cantidad
-                stock_obj.save()
+            # Deduct stock (ya validado arriba)
+            stock_obj = StockMedicamento.objects.get(id_medicamento=medicamento)
+            stock_obj.cantidad -= cantidad
+            stock_obj.save()
                 
         return comprobante
