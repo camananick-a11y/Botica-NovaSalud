@@ -1,13 +1,53 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="/logo.jpeg" id="favicon" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Botica NovaSalud</title>
+  <link rel="stylesheet" href="/loader.css">
+  <script>
+    // Script para hacer que el favicon sea redondo dinámicamente
+    window.addEventListener('load', () => {
+      const img = new Image();
+      img.src = '/logo.jpeg';
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 64; // Tamaño estándar para favicons de alta resolución
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        // Dibujar círculo
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Dibujar imagen
+        ctx.drawImage(img, 0, 0, size, size);
+
+        // Actualizar favicon
+        const favicon = document.getElementById('favicon');
+        favicon.href = canvas.toDataURL('image/png');
+      };
+    });
+  </script>
+</head>
+
+<body>
+  <div id="root">
+    <div id="loader">
+      <img src="/logo.jpeg" alt="Logo" />
+      <div class="loading-dots">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>
