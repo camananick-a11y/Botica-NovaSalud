@@ -42,7 +42,10 @@ class MedicamentoSerializer(serializers.ModelSerializer):
                   'id_categoria', 'categoria_nombre',
                   'id_presentacion', 'presentacion_nombre',
                   'id_unidad', 'unidad_nombre', 'stock', 'imagen_url']
+        extra_kwargs = {'precio': {'coerce_to_string': False}}
         
     def get_stock(self, obj):
-        stock_obj = StockMedicamento.objects.filter(id_medicamento=obj).first()
-        return stock_obj.cantidad if stock_obj else 0
+        try:
+            return obj.stockmedicamento_set.all()[0].cantidad
+        except (IndexError, AttributeError):
+            return 0

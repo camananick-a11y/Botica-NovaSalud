@@ -19,15 +19,17 @@ class UsuarioManager(BaseUserManager):
     def create_user(self, usuario, nombre, password=None, **extra_fields):
         if not usuario:
             raise ValueError('El usuario debe tener un nombre de usuario')
+        extra_fields.setdefault('is_active', True)
         user = self.model(usuario=usuario, nombre=nombre, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, usuario, nombre, password=None, **extra_fields):
-        # Asignar a un cargo de administrador por defecto si es superuser
         cargo, _ = Cargo.objects.get_or_create(nombre='Administrador')
         extra_fields.setdefault('id_cargo', cargo)
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_active', True)
         return self.create_user(usuario, nombre, password, **extra_fields)
 
 
@@ -36,6 +38,8 @@ class Usuario(AbstractBaseUser):
     usuario = models.CharField(max_length=150, unique=True)
     nombre = models.CharField(max_length=200)
     id_cargo = models.ForeignKey(Cargo, on_delete=models.PROTECT, db_column='id_cargo')
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = UsuarioManager()

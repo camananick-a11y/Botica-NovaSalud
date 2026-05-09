@@ -4,20 +4,26 @@ from medicamentos.models import StockMedicamento
 
 class DetalleVentaSerializer(serializers.ModelSerializer):
     medicamento_nombre = serializers.CharField(source='id_medicamento.nombre', read_only=True)
+    medicamento_presentacion = serializers.CharField(source='id_medicamento.id_presentacion.nombre', read_only=True, default='-')
     
     class Meta:
         model = DetalleVenta
-        fields = ['id_detalle', 'id_medicamento', 'medicamento_nombre', 'cantidad', 'precio_unitario', 'subtotal']
+        fields = ['id_detalle', 'id_medicamento', 'medicamento_nombre', 'medicamento_presentacion', 'cantidad', 'precio_unitario', 'subtotal']
 
 class ComprobanteSerializer(serializers.ModelSerializer):
     detalles = DetalleVentaSerializer(many=True, read_only=True)
     cliente_nombre = serializers.CharField(source='id_cliente.nombre', read_only=True)
+    cliente_tipo_documento = serializers.CharField(source='id_cliente.tipo_documento', read_only=True, default='-')
+    cliente_numero_documento = serializers.CharField(source='id_cliente.numero_documento', read_only=True, default='-')
+    cliente_direccion = serializers.CharField(source='id_cliente.direccion', read_only=True, default='-')
     usuario_nombre = serializers.CharField(source='id_usuario.nombre', read_only=True)
+    usuario_usuario = serializers.CharField(source='id_usuario.usuario', read_only=True)
     
     class Meta:
         model = Comprobante
         fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'total', 
-                  'id_cliente', 'cliente_nombre', 'id_usuario', 'usuario_nombre', 'detalles']
+                  'id_cliente', 'cliente_nombre', 'cliente_tipo_documento', 'cliente_numero_documento', 'cliente_direccion',
+                  'id_usuario', 'usuario_nombre', 'usuario_usuario', 'detalles']
 
 
 class DetalleVentaCreateSerializer(serializers.ModelSerializer):
@@ -30,7 +36,8 @@ class ComprobanteCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Comprobante
-        fields = ['serie', 'tipo', 'id_cliente', 'detalles']
+        fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'total', 'id_cliente', 'detalles']
+        read_only_fields = ['id_comprobante', 'total', 'fecha']
         
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles', [])

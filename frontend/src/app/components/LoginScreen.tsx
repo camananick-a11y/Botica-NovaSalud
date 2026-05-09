@@ -1,97 +1,207 @@
 import { useState, FormEvent, type ElementType } from 'react'
-import { User, Lock, Eye, EyeOff, ChevronRight, Shield, ShoppingCart, Package, TrendingUp, Pill, Syringe, Droplets, Heart, Activity } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, ChevronRight, Shield, ShoppingCart, Package, TrendingUp, CheckCircle2, Activity } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import type { UserRole } from '../context/AppContext'
 
 const ROLE_ICONS: Record<UserRole, ElementType> = { Administrador: Shield, Vendedor: ShoppingCart, Almacenero: Package, Supervisor: TrendingUp }
-const ROLE_COLORS: Record<UserRole, { gradient: string; text: string }> = {
-  Administrador: { gradient: 'from-purple-500 to-purple-700', text: 'text-purple-600' },
-  Vendedor: { gradient: 'from-emerald-500 to-emerald-700', text: 'text-emerald-600' },
-  Almacenero: { gradient: 'from-blue-500 to-blue-700', text: 'text-blue-600' },
-  Supervisor: { gradient: 'from-amber-500 to-amber-700', text: 'text-amber-600' },
+
+const ROLE_COLORS: Record<UserRole, { iconBg: string; iconText: string; border: string; activeBorder: string }> = {
+  Administrador: { iconBg: 'bg-[#4EA0FC]/15', iconText: 'text-[#4EA0FC]', border: 'border-[#2A3B56]', activeBorder: 'border-[#4EA0FC]' },
+  Vendedor: { iconBg: 'bg-[#19CF8D]/15', iconText: 'text-[#19CF8D]', border: 'border-[#2A3B56]', activeBorder: 'border-[#19CF8D]' },
+  Almacenero: { iconBg: 'bg-[#8CA3E6]/15', iconText: 'text-[#8CA3E6]', border: 'border-[#2A3B56]', activeBorder: 'border-[#8CA3E6]' },
+  Supervisor: { iconBg: 'bg-[#6E8FCF]/15', iconText: 'text-[#6E8FCF]', border: 'border-[#2A3B56]', activeBorder: 'border-[#6E8FCF]' },
+}
+
+const TEST_CREDENTIALS: Record<UserRole, { user: string; pass: string }> = {
+  Administrador: { user: 'admin', pass: 'admin123' },
+  Vendedor: { user: 'vendedor1', pass: 'vendedor123' },
+  Almacenero: { user: 'almacen1', pass: 'almacen123' },
+  Supervisor: { user: 'supervisor1', pass: 'super123' },
 }
 
 export function LoginScreen() {
   const { login } = useApp()
   const [selectedRole, setSelectedRole] = useState<UserRole>('Administrador')
-  const [username, setUsername] = useState(''); const [password, setPassword] = useState('')
-  const [showPw, setShowPw] = useState(false); const [loading, setLoading] = useState(false); const [error, setError] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); if (!username.trim() || !password.trim()) { setError('Credenciales requeridas'); return }
-    setError(''); setLoading(true)
-    try { await login(username.trim(), password, selectedRole) }
-    catch (err: any) { setError('Acceso denegado') } finally { setLoading(false) }
+    e.preventDefault()
+    if (!username.trim() || !password.trim()) {
+      setError('Credenciales requeridas')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      await login(username.trim(), password, selectedRole)
+      setSuccess(true)
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Acceso denegado')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function autofillCredentials() {
+    const creds = TEST_CREDENTIALS[selectedRole]
+    setUsername(creds.user)
+    setPassword(creds.pass)
+    setError('')
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50" style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}>
-      {/* Branding Section */}
-      <div className="hidden lg:flex lg:w-[50%] relative overflow-hidden flex-col p-16" style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)' }}>
-        <div className="absolute top-0 right-0 w-full h-full opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #334155 1px, transparent 0)', backgroundSize: '32px 32px' }} />
-        <div className="absolute top-1/4 -right-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px]" />
-        
-        <div className="relative z-10 flex items-center gap-4 mb-auto">
-          <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl"><img src="/logo.jpeg" alt="L" className="w-full h-full object-cover" /></div>
-          <div><h1 className="text-xl font-black text-white tracking-tighter uppercase">Nova Salud</h1><p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.3em]">Management System</p></div>
-        </div>
-
-        <div className="relative z-10 my-auto max-w-sm">
-          <div className="grid grid-cols-3 gap-6 mb-12">
-            {[Pill, Syringe, Activity].map((Icon, i) => (
-              <div key={i} className="w-16 h-16 rounded-[22px] bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-md shadow-xl"><Icon className="w-7 h-7 text-emerald-400" /></div>
-            ))}
-          </div>
-          <h2 className="text-4xl font-black text-white tracking-tighter leading-[0.9] mb-6">Eficiencia Clínica,<br/><span className="text-emerald-500">Gestión Inteligente.</span></h2>
-          <p className="text-slate-400 text-sm leading-relaxed font-medium">Control total de inventario, ventas y personal bajo la infraestructura más robusta y moderna del mercado farmacéutico.</p>
-        </div>
-        
-        <div className="relative z-10 flex gap-12 mt-auto">
-          {[{ v: '2k+', l: 'PRODUCTOS' }, { v: '100%', l: 'SEGURIDAD' }].map((s, i) => (
-            <div key={i}><p className="text-2xl font-black text-white tracking-tighter">{s.v}</p><p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{s.l}</p></div>
-          ))}
-        </div>
+    <div className="min-h-screen flex bg-gradient-to-br from-[#162033] via-[#1B263B] to-[#162033]">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-20 -left-20 w-80 h-80 bg-[#4EA0FC]/8 rounded-full blur-3xl" />
+        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-[#19CF8D]/8 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-[#8CA3E6]/5 rounded-full blur-3xl" />
       </div>
 
-      {/* Login Section */}
-      <div className="flex-1 flex items-center justify-center p-8 sm:p-16">
-        <div className="w-full max-w-[400px]">
-          <div className="mb-10">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Bienvenido</h2>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Seleccione su Terminal de Acceso</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-10">
-            {(['Administrador', 'Vendedor', 'Almacenero', 'Supervisor'] as UserRole[]).map((role) => {
-              const active = selectedRole === role
-              const Icon = ROLE_ICONS[role]
-              return (
-                <button key={role} type="button" onClick={() => setSelectedRole(role)} 
-                  className={`p-4 rounded-[28px] border-2 transition-all flex flex-col items-center gap-3 ${active ? 'bg-white border-slate-900 shadow-2xl shadow-slate-200' : 'bg-slate-100/50 border-transparent hover:bg-slate-100'}`}>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${active ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 shadow-sm'}`}><Icon className="w-5 h-5" /></div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-slate-900' : 'text-slate-400'}`}>{role}</span>
-                </button>
-              )
-            })}
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Credencial de Usuario</label>
-              <div className="relative group"><User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-slate-900 transition-all" /><input required value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="w-full pl-12 pr-4 py-4 rounded-[20px] bg-white border-2 border-slate-50 focus:border-slate-900 outline-none text-xs font-bold shadow-sm transition-all" /></div>
+      <div className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-lg">
+          <div className="med-card-dark p-8 sm:p-10">
+            <div className="text-center mb-8">
+              <div className="flex items-center justify-center gap-3 mb-4">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-[#2A3B56] bg-[#24324A] ring-2 ring-[#4EA0FC]/30">
+                  <img src="/logo.jpeg" alt="Nova Salud" className="w-full h-full object-cover" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-black text-[#E8F0FE] tracking-tighter mb-1">Nova Salud</h1>
+              <p className="text-[#19CF8D] text-xs font-black uppercase tracking-[0.2em]">Sistema Farmacéutico Inteligente</p>
+              <p className="text-[#8CA3E6] text-[13px] mt-3">Gestión integral de inventario, ventas y personal para farmacias empresariales</p>
             </div>
-            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Clave de Seguridad</label>
-              <div className="relative group"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-slate-900 transition-all" /><input required type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full pl-12 pr-12 py-4 rounded-[20px] bg-white border-2 border-slate-50 focus:border-slate-900 outline-none text-xs font-bold shadow-sm transition-all" />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-900 transition-colors">{showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+
+            <div className="mb-6">
+              <p className="med-section-title mb-3 text-center">Seleccione su terminal de acceso</p>
+              <div className="grid grid-cols-2 gap-3">
+                {(['Administrador', 'Vendedor', 'Almacenero', 'Supervisor'] as UserRole[]).map((role) => {
+                  const active = selectedRole === role
+                  const Icon = ROLE_ICONS[role]
+                  const colors = ROLE_COLORS[role]
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => { setSelectedRole(role); setError('') }}
+                      className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left
+                        ${active
+                          ? `bg-[#24324A] ${colors.activeBorder} shadow-lg`
+                          : `bg-[#1B263B]/60 ${colors.border} hover:bg-[#24324A]`
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200
+                          ${active
+                            ? 'bg-gradient-to-br from-[#4EA0FC] to-[#3B82F6] text-white'
+                            : `${colors.iconBg} ${colors.iconText}`
+                          }
+                        `}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${active ? 'text-[#E8F0FE]' : 'text-[#8CA3E6]'}`}>{role}</span>
+                      </div>
+                      {active && (
+                        <div className="absolute top-2 right-2">
+                          <div className="w-2 h-2 bg-[#19CF8D] rounded-full shadow-lg shadow-[#19CF8D]/50 animate-pulse" />
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
-            {error && <div className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-xl border border-red-100 animate-shake">{error}</div>}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label className="med-label">Usuario</label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5F7FB8]" />
+                  <input
+                    required
+                    value={username}
+                    onChange={e => { setUsername(e.target.value); setError('') }}
+                    placeholder="Ingrese su usuario"
+                    className="med-input pl-10"
+                  />
+                </div>
+              </div>
 
-            <button type="submit" disabled={loading} className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-[24px] text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-slate-300 transition-all active:scale-[0.98] flex items-center justify-center gap-3">
-              {loading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <>Validar Identidad <ChevronRight className="w-4 h-4" /></>}
-            </button>
-          </form>
-          <p className="text-center text-[9px] font-black text-slate-300 uppercase tracking-widest mt-10">Nova Salud &copy; 2026 &bull; Authorized Personnel Only</p>
+              <div className="space-y-2">
+                <label className="med-label">Contraseña</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5F7FB8]" />
+                  <input
+                    required
+                    type={showPw ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => { setPassword(e.target.value); setError('') }}
+                    placeholder="••••••••"
+                    className="med-input pl-10 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(!showPw)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#5F7FB8] hover:text-[#4EA0FC] p-1.5 rounded-lg transition-all"
+                  >
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={autofillCredentials}
+                className="w-full text-[10px] font-bold text-[#19CF8D] uppercase tracking-widest py-2.5 px-4 rounded-xl border border-[#19CF8D]/30 hover:border-[#19CF8D]/60 bg-[#19CF8D]/5 hover:bg-[#19CF8D]/10 transition-all active:scale-95"
+              >
+                ↻ Usar credenciales de prueba
+              </button>
+
+              {error && (
+                <div className="bg-[#EF4444]/10 text-[#EF4444] text-[10px] font-bold uppercase tracking-widest px-4 py-3 rounded-xl border border-[#EF4444]/30 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-[#EF4444] rounded-full animate-pulse shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full py-3.5 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                  loading
+                    ? 'bg-[#24324A] text-[#5F7FB8] cursor-not-allowed'
+                    : 'med-btn-primary'
+                }`}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Validando...
+                  </>
+                ) : (
+                  <>
+                    {success ? <CheckCircle2 className="w-4 h-4" /> : <Activity className="w-4 h-4" />}
+                    Acceder al Sistema
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center space-y-2">
+              <p className="text-[9px] font-bold text-[#8CA3E6] uppercase tracking-widest">Credenciales de Demostración</p>
+              <div className="flex justify-center gap-2 text-[8px] text-[#5F7FB8]">
+                <span className="bg-[#24324A] px-3 py-1.5 rounded-lg font-mono border border-[#2A3B56]">admin / admin123</span>
+                <span className="bg-[#24324A] px-3 py-1.5 rounded-lg font-mono border border-[#2A3B56]">vendedor1 / vendedor123</span>
+              </div>
+              <p className="text-[8px] font-bold text-[#5F7FB8] uppercase tracking-widest pt-1">Nova Salud &copy; 2026 • Farmacia Empresarial</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

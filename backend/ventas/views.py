@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from auth_app.permissions import IsVendedor, IsSupervisor
 from django.db.models import Sum
+from django.db.models.functions import TruncMonth
 from .models import Comprobante, DetalleVenta
 from .serializers import ComprobanteSerializer, ComprobanteCreateSerializer
 from medicamentos.models import StockMedicamento, Medicamento
@@ -10,10 +11,14 @@ from datetime import datetime, timedelta
 
 class ComprobanteViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar comprobantes y ventas"""
-    queryset = Comprobante.objects.all().order_by('-fecha')
+    queryset = Comprobante.objects.select_related(
+        'id_cliente', 'id_usuario'
+    ).prefetch_related(
+        'detalles'
+    ).all().order_by('-fecha')
     
     def get_permissions(self):
-        if self.action in ['reporte_ventas_fecha', 'medicamentos_mas_vendidos', 'stock_bajo']:
+        if self.action in ['reporte_ventas_fecha', 'medicamentos_mas_vendidos', 'stock_bajo', 'ventas_por_mes']:
             return [IsSupervisor()]
         return [IsVendedor()]
     
@@ -59,4 +64,15 @@ class ComprobanteViewSet(viewsets.ModelViewSet):
             for stock in stocks
         ]
         return Response(resultados)
+
+    @action(detail=False, methods=['get'])
+    def ventas_por_mes(self, request):
+        ventas = (
+            Comprobante.objects
+            .annotate(mes=TruncMonth('fecha'))
+            .values('mes')
+            .annotate(total=Sum('total'))
+            .order_by('mes')
+        )
+        return Response(list(ventas))
 
