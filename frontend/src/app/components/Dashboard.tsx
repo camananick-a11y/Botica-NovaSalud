@@ -1,78 +1,407 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, Package, Users, DollarSign, AlertCircle, ShoppingCart, ArrowUpRight, ArrowDownRight, Activity, Calendar, Clock } from 'lucide-react'
+import { TrendingUp, Package, Users, AlertCircle, ShoppingCart, ArrowUpRight, Activity, Calendar, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts'
 import api from '../../api/axios'
 
+const CARD_STYLES: Record<string, { bg: string; iconBg: string; iconColor: string }> = {
+  emerald: { bg: 'bg-[#24324A]', iconBg: 'bg-[#19CF8D]/15', iconColor: 'text-[#19CF8D]' },
+  blue: { bg: 'bg-[#24324A]', iconBg: 'bg-[#4EA0FC]/15', iconColor: 'text-[#4EA0FC]' },
+  purple: { bg: 'bg-[#24324A]', iconBg: 'bg-[#8CA3E6]/15', iconColor: 'text-[#8CA3E6]' },
+  red: { bg: 'bg-[#24324A]', iconBg: 'bg-[#EF4444]/15', iconColor: 'text-[#EF4444]' },
+  amber: { bg: 'bg-[#24324A]', iconBg: 'bg-[#F59E0B]/15', iconColor: 'text-[#F59E0B]' },
+}
+
+const TOP_COLORS = ['#4EA0FC', '#19CF8D', '#8CA3E6', '#6E8FCF', '#7A96D6']
+
+function formatSoles(value: number): string {
+  return `S/ ${value.toFixed(2)}`
+}
+
 export function Dashboard() {
-  const [stats, setStats] = useState({ total_ventas: 0, total_medicamentos: 0, total_clientes: 0, ventas_mes: 0, stock_bajo: 0 })
+  const [stats, setStats] = useState({ total_ventas: 0, total_medicamentos: 0, total_clientes: 0, ventas_mes: 0, stock_bajo: 0, agotados: 0 })
+  const [salesTrend, setSalesTrend] = useState<{ date: string; total: number }[]>([])
+  const [topProducts, setTopProducts] = useState<{ medicamento: string; total_vendido: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchStats = async () => {
+    let cancelled = false
+
+    const fetchAll = async () => {
       try {
-        const [v, m, c] = await Promise.all([api.get('/ventas/comprobantes/'), api.get('/medicamentos/'), api.get('/clientes/')])
-        const medData = m.data.results || m.data
-        const lowStock = medData.filter((item: any) => (item.stock || 0) <= 10).length
-        setStats({ total_ventas: v.data.count || v.data.length, total_medicamentos: medData.length, total_clientes: c.data.count || c.data.length, ventas_mes: 1240.50, stock_bajo: lowStock })
-      } catch (e) { console.error(e) } finally { setLoading(false) }
+        setLoading(true)
+        setError(null)
+
+        const [ventasRes, medsRes, clientesRes] = await Promise.all([
+          api.get('/ventas/comprobantes/'),
+          api.get('/medicamentos/'),
+          api.get('/clientes/'),
+        ])
+
+        if (cancelled) return
+
+        const comprobantes = ventasRes.data.results || ventasRes.data
+        const medicamentos = medsRes.data.results || medsRes.data
+        const clientesData = clientesRes.data.results || clientesRes.data
+
+        const now = new Date()
+        const currentMonth = now.getMonth()
+        const currentYear = now.getFullYear()
+
+        const lowStockItems = medicamentos.filter((m: any) => {
+          const s = Number(m.stock)
+          return s > 0 && s <= 10
+        })
+        const outOfStock = medicamentos.filter((m: any) => {
+          const s = Number(m.stock)
+          return s === 0 || isNaN(s)
+        })
+
+        const sevenDaysAgo = new Date(now)
+        sevenDaysAgo.setDate(now.getDate() - 6)
+        sevenDaysAgo.setHours(0, 0, 0, 0)
+
+        const dayTotals: Record<string, number> = {}
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(sevenDaysAgo)
+          d.setDate(sevenDaysAgo.getDate() + i)
+          dayTotals[d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })] = 0
+        }
+
+        let monthlyTotal = 0
+        comprobantes.forEach((sale: any) => {
+          const saleDate = new Date(sale.fecha)
+          const total = Number(sale.total) || 0
+
+          if (saleDate >= sevenDaysAgo) {
+            const key = saleDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
+            if (key in dayTotals) {
+              dayTotals[key] += total
+            }
+          }
+
+          if (saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear) {
+            monthlyTotal += total
+          }
+        })
+
+        setSalesTrend(
+          Object.entries(dayTotals).map(([date, total]) => ({ date, total }))
+        )
+
+        setStats({
+          total_ventas: ventasRes.data.count ?? comprobantes.length,
+          total_medicamentos: medsRes.data.count ?? medicamentos.length,
+          total_clientes: clientesRes.data.count ?? clientesData.length,
+          ventas_mes: monthlyTotal,
+          stock_bajo: lowStockItems.length,
+          agotados: outOfStock.length,
+        })
+
+        try {
+          const topRes = await api.get('/ventas/comprobantes/medicamentos_mas_vendidos/')
+          if (!cancelled && Array.isArray(topRes.data)) {
+            setTopProducts(
+              topRes.data.map((item: any) => ({
+                medicamento: item.id_medicamento__nombre || 'Desconocido',
+                total_vendido: Number(item.total_vendido) || 0,
+              }))
+            )
+          }
+        } catch {
+          console.warn('medicamentos_mas_vendidos no accesible (requiere Supervisor)')
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          const msg = err?.response?.data
+            ? typeof err.response.data === 'string'
+              ? err.response.data
+              : JSON.stringify(err.response.data)
+            : err?.message || 'Error al cargar datos del Dashboard'
+          setError(msg)
+          console.error('Dashboard fetch error:', err)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-    fetchStats()
+
+    fetchAll()
+    return () => { cancelled = true }
   }, [])
 
   const cards = [
-    { title: 'Ventas', value: stats.total_ventas, icon: ShoppingCart, color: 'emerald' },
-    { title: 'Productos', value: stats.total_medicamentos, icon: Package, color: 'blue' },
-    { title: 'Clientes', value: stats.total_clientes, icon: Users, color: 'purple' },
-    { title: 'Stock Bajo', value: stats.stock_bajo, icon: AlertCircle, color: 'red' }
+    { title: 'Ventas', value: stats.total_ventas, icon: ShoppingCart, color: 'emerald' as const },
+    { title: 'Productos', value: stats.total_medicamentos, icon: Package, color: 'blue' as const },
+    { title: 'Clientes', value: stats.total_clientes, icon: Users, color: 'purple' as const },
+    { title: 'Stock Bajo', value: stats.stock_bajo, icon: AlertCircle, color: 'red' as const },
+    { title: 'Agotados', value: stats.agotados, icon: AlertTriangle, color: 'amber' as const },
   ]
 
+  const stockOk = Math.max(0, stats.total_medicamentos - stats.stock_bajo - stats.agotados)
+  const stockDistribution = [
+    { name: 'Agotado', value: stats.agotados },
+    { name: 'Crítico', value: stats.stock_bajo },
+    { name: 'Disponible', value: stockOk },
+  ]
+
+  const renderStockLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+    if (!percent) return null
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+    const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180))
+    const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180))
+    return (
+      <text x={x} y={y} fill="#E8F0FE" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={10} fontWeight={700}>
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="h-full bg-background p-6 sm:p-8 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-[#4EA0FC] animate-spin" />
+          <p className="text-[#8CA3E6] text-sm font-semibold tracking-wider uppercase">Cargando datos del panel...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="h-full bg-background p-6 sm:p-8 flex items-center justify-center">
+        <div className="med-card-dark p-8 max-w-lg text-center space-y-4">
+          <AlertCircle className="w-12 h-12 text-[#EF4444] mx-auto" />
+          <h2 className="text-xl font-black text-[#E8F0FE]">Error al cargar Dashboard</h2>
+          <p className="text-sm text-[#EF4444] break-all">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="med-btn-primary inline-flex items-center gap-2 px-6 py-3 rounded-xl"
+          >
+            <RefreshCw className="w-4 h-4" /> Reintentar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="h-full bg-slate-100 p-6 sm:p-8 overflow-y-auto no-scrollbar" style={{ fontFamily: '"Plus Jakarta Sans", sans-serif' }}>
+    <div className="h-full bg-background p-6 sm:p-8 overflow-y-auto scrollbar-thin">
       <div className="max-w-screen-2xl mx-auto space-y-8">
-        
-        <div className="flex items-center justify-between">
-          <div><h1 className="text-2xl font-black text-slate-900 tracking-tighter">Panel de Control</h1><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2"><Activity className="w-3 h-3 text-emerald-500" /> Rendimiento en vivo</p></div>
-          <div className="hidden sm:flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm"><Calendar className="w-4 h-4 text-slate-300" /><span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span></div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-[#E8F0FE] tracking-tighter">Panel de Control</h1>
+            <p className="text-[9px] font-black text-[#8CA3E6] uppercase tracking-widest mt-1 flex items-center gap-2">
+              <Activity className="w-3 h-3 text-[#19CF8D]" /> Rendimiento en vivo
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-3 med-card-dark px-4 py-2">
+            <Calendar className="w-4 h-4 text-[#8CA3E6]" />
+            <span className="text-[10px] font-black text-[#8CA3E6] uppercase tracking-widest">
+              {new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {cards.map((c, i) => (
-            <div key={i} className="bg-white rounded-[24px] p-5 border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+          {cards.map((card, index) => (
+            <div key={index} className="med-card-dark p-5">
               <div className="flex justify-between items-start mb-4">
-                <div className={`w-10 h-10 rounded-xl bg-${c.color}-50 flex items-center justify-center text-${c.color}-600`}><c.icon className="w-5 h-5" /></div>
-                <ArrowUpRight className="w-3 h-3 text-slate-200" />
+                <div className={`w-10 h-10 rounded-xl ${CARD_STYLES[card.color].iconBg} ${CARD_STYLES[card.color].iconColor} flex items-center justify-center`}>
+                  <card.icon className="w-5 h-5" />
+                </div>
+                <ArrowUpRight className="w-3 h-3 text-[#5F7FB8]" />
               </div>
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{c.title}</p>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tighter">{c.value}</h3>
+              <p className="med-section-title mb-0.5">{card.title}</p>
+              <h3 className="text-2xl font-black text-[#E8F0FE] tracking-tighter">{card.value}</h3>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900 rounded-[32px] p-8 text-white relative overflow-hidden shadow-xl border border-white/5">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full -mr-32 -mt-32 blur-[100px]" />
-            <div className="flex items-center justify-between mb-8 relative z-10"><div><h2 className="text-xl font-black tracking-tighter">Flujo de Caja</h2><p className="text-[8px] font-black uppercase tracking-[0.4em] text-emerald-400 mt-1">Estimado del mes</p></div><TrendingUp className="w-5 h-5 text-emerald-400" /></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative z-10">
-              <div className="bg-white/5 p-6 rounded-[24px] border border-white/10"><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Ingresos Hoy</p><p className="text-4xl font-black tracking-tighter">S/ {stats.ventas_mes.toFixed(2)}</p></div>
-              <div className="bg-emerald-600 p-6 rounded-[24px] shadow-lg shadow-emerald-500/20"><p className="text-[9px] font-black uppercase tracking-widest text-emerald-100 mb-2">Meta de Ventas</p><div className="h-1.5 bg-white/20 rounded-full mb-2"><div className="h-full bg-white rounded-full w-[75%]" /></div><p className="text-right text-[8px] font-black uppercase tracking-widest">S/ 2,500.00</p></div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6">
+          <div className="med-card-dark p-6 sm:p-8">
+            <div className="flex items-center justify-between gap-4 mb-8">
+              <div>
+                <h2 className="text-xl font-black text-[#E8F0FE] tracking-tighter">Tendencia de Ventas</h2>
+                <p className="med-section-title mt-1">Últimos 7 días</p>
+              </div>
+              <div className="text-right">
+                <p className="med-section-title">Ingresos del periodo</p>
+                <p className="text-2xl font-black text-[#E8F0FE]">{formatSoles(salesTrend.reduce((s, d) => s + d.total, 0))}</p>
+              </div>
+            </div>
+            <div className="h-72">
+              {salesTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={salesTrend} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4EA0FC" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#4EA0FC" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2A3B56" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#8CA3E6' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: '#8CA3E6' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1B263B', border: '1px solid #2A3B56', borderRadius: '8px', color: '#E8F0FE' }} formatter={(value: number) => [formatSoles(value), 'Total']} />
+                    <Area type="monotone" dataKey="total" stroke="#4EA0FC" strokeWidth={3} fill="url(#salesGradient)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Sin ventas en los últimos 7 días</div>
+              )}
             </div>
           </div>
 
-          <div className="bg-white rounded-[32px] p-8 border border-slate-200 shadow-sm">
-            <h3 className="text-lg font-black text-slate-900 tracking-tighter mb-6">Actividad</h3>
-            <div className="space-y-4">
-              {[ { l: 'Stock Crítico', v: stats.stock_bajo, i: AlertCircle, c: 'red' }, { l: 'Nuevas Ventas', v: stats.total_ventas, i: ShoppingBag, c: 'emerald' }, { l: 'Última Carga', v: 'Hace 2m', i: Clock, c: 'blue' } ].map((item, idx) => (
-                <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-slate-50">
-                  <div className={`w-8 h-8 rounded-lg bg-${item.c}-50 flex items-center justify-center text-${item.c}-600`}><item.i className="w-4 h-4" /></div>
-                  <div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{item.l}</p><p className="text-xs font-black text-slate-900">{item.v}</p></div>
+          <div className="space-y-6">
+            <div className="med-card-dark p-6 sm:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-[#E8F0FE] tracking-tighter">Top Medicamentos</h3>
+                  <p className="med-section-title mt-1">Más vendidos</p>
                 </div>
-              ))}
+                {topProducts.length > 0 && (
+                  <div className="text-right med-section-title">Total {topProducts.length}</div>
+                )}
+              </div>
+              <div className="h-64">
+                {topProducts.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topProducts.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="medicamento" type="category" width={120} tick={{ fontSize: 11, fill: '#E8F0FE' }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1B263B', border: '1px solid #2A3B56', borderRadius: '8px', color: '#E8F0FE' }} formatter={(value: number) => [value, 'Unidades']} />
+                      <Bar dataKey="total_vendido" radius={[12, 12, 12, 12]}>
+                        {topProducts.slice(0, 5).map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={TOP_COLORS[index % TOP_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Datos no disponibles</div>
+                )}
+              </div>
+              {topProducts.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  {topProducts.slice(0, 3).map((product, index) => (
+                    <div key={product.medicamento} className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-[#24324A]">
+                      <p className="med-section-title truncate">{index + 1}. {product.medicamento}</p>
+                      <span className="text-sm font-black text-[#E8F0FE] shrink-0">{product.total_vendido}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="med-card-dark p-6 sm:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-[#E8F0FE] tracking-tighter">Estado de Inventario</h3>
+                  <p className="med-section-title mt-1">Stock crítico vs disponible</p>
+                </div>
+                <div className="text-right med-section-title">Total {stats.total_medicamentos}</div>
+              </div>
+              <div className="h-64">
+                {stockDistribution.some(d => d.value > 0) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={stockDistribution.filter(d => d.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={80} paddingAngle={3} label={renderStockLabel} labelLine={false}>
+                        {stockDistribution.filter(d => d.value > 0).map((entry, index) => {
+                          const colors = ['#EF4444', '#F59E0B', '#19CF8D']
+                          return <Cell key={`slice-${index}`} fill={colors[index]} />
+                        })}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#1B263B', border: '1px solid #2A3B56', borderRadius: '8px', color: '#E8F0FE' }} formatter={(value: number) => [value, 'Productos']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Sin datos de inventario</div>
+                )}
+              </div>
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                {stockDistribution.filter(d => d.value > 0 || stockDistribution.some(x => x.value > 0)).map((segment) => (
+                  <div key={segment.name} className="p-3 rounded-2xl bg-[#24324A]">
+                    <p className="med-section-title">{segment.name}</p>
+                    <p className="text-sm font-black text-[#E8F0FE]">{segment.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 med-card-dark p-6 sm:p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#4EA0FC]/5 rounded-full -mr-32 -mt-32 blur-[100px]" />
+            <div className="flex items-center justify-between mb-8 relative z-10">
+              <div>
+                <h2 className="text-xl font-black text-[#E8F0FE] tracking-tighter">Flujo de Caja</h2>
+                <p className="text-[8px] font-black uppercase tracking-[0.4em] text-[#19CF8D] mt-1">Resumen del mes</p>
+              </div>
+              <TrendingUp className="w-5 h-5 text-[#19CF8D]" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative z-10">
+              <div className="bg-[#24324A] p-6 rounded-2xl">
+                <p className="med-section-title mb-1">Ingresos del Mes</p>
+                <p className="text-4xl font-black text-[#E8F0FE] tracking-tighter">{formatSoles(stats.ventas_mes)}</p>
+              </div>
+              <div className="bg-gradient-to-br from-[#19CF8D] to-[#15B87C] p-6 rounded-2xl">
+                <p className="text-[9px] font-black uppercase tracking-widest text-white/80 mb-2">Meta de Ventas</p>
+                <div className="h-1.5 bg-white/25 rounded-full mb-2">
+                  <div className="h-full bg-white rounded-full" style={{ width: `${Math.min(100, (stats.ventas_mes / 2500) * 100)}%` }} />
+                </div>
+                <p className="text-right text-[8px] font-black uppercase tracking-widest text-white/70">
+                  {formatSoles(stats.ventas_mes)} / S/ 2,500.00
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="med-card-dark p-6 sm:p-8">
+            <h3 className="text-lg font-black text-[#E8F0FE] tracking-tighter mb-6">Actividad</h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#24324A]">
+                <div className="w-8 h-8 rounded-lg bg-[#EF4444]/15 text-[#EF4444] flex items-center justify-center">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="med-section-title">Stock Crítico</p>
+                  <p className="text-xs font-black text-[#E8F0FE]">{stats.stock_bajo} productos</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#24324A]">
+                <div className="w-8 h-8 rounded-lg bg-[#F59E0B]/15 text-[#F59E0B] flex items-center justify-center">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="med-section-title">Agotados</p>
+                  <p className="text-xs font-black text-[#E8F0FE]">{stats.agotados} productos</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#24324A]">
+                <div className="w-8 h-8 rounded-lg bg-[#19CF8D]/15 text-[#19CF8D] flex items-center justify-center">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="med-section-title">Ventas Registradas</p>
+                  <p className="text-xs font-black text-[#E8F0FE]">{stats.total_ventas} comprobantes</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#24324A]">
+                <div className="w-8 h-8 rounded-lg bg-[#19CF8D]/15 text-[#19CF8D] flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="med-section-title">Ingresos del Mes</p>
+                  <p className="text-xs font-black text-[#E8F0FE]">{formatSoles(stats.ventas_mes)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
     </div>
   )
 }
-const ShoppingBag = ({className}: {className?: string}) => <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>

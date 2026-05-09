@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from auth_app.permissions import IsAlmacenero
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Prefetch, Q
 from .models import Laboratorio, Categoria, Presentacion, Unidad, Medicamento, StockMedicamento
 from .serializers import (
     LaboratorioSerializer, CategoriaSerializer, PresentacionSerializer, 
@@ -39,7 +40,11 @@ class StockMedicamentoViewSet(viewsets.ModelViewSet):
     filterset_fields = ['id_medicamento']
 
 class MedicamentoViewSet(viewsets.ModelViewSet):
-    queryset = Medicamento.objects.all()
+    queryset = Medicamento.objects.select_related(
+        'id_laboratorio', 'id_categoria', 'id_presentacion', 'id_unidad'
+    ).prefetch_related(
+        Prefetch('stockmedicamento_set', queryset=StockMedicamento.objects.all())
+    ).all()
     serializer_class = MedicamentoSerializer
     permission_classes = [IsAlmacenero]
     search_fields = ['nombre']
@@ -77,3 +82,20 @@ class MedicamentoViewSet(viewsets.ModelViewSet):
             )
 
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def stock_bajo(self, request):
+        umbral = int(request.query_params.get('umbral', 10))
+        stocks = StockMedicamento.objects.filter(cantidad__lt=umbral).select_related('id_medicamento')
+        resultados = [
+            {
+                'id_medicamento': stock.id_medicamento.id_medicamento,
+                'medicamento': stock.id_medicamento.nombre,
+                'cantidad_actual': stock.cantidad
+            }
+            for stock in stocks
+        ]
+        return Response({
+            'count': len(resultados),
+            'results': resultados
+        })

@@ -6,21 +6,24 @@ interface ConfirmModalProps {
   onConfirm: () => void
   onCancel: () => void
   type?: 'danger' | 'warning'
+  isOpen?: boolean
 }
 
-export function ConfirmModal({ title, message, onConfirm, onCancel, type = 'danger' }: ConfirmModalProps) {
+export function ConfirmModal({ title, message, onConfirm, onCancel, type = 'danger', isOpen = true }: ConfirmModalProps) {
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="med-modal-overlay animate-in fade-in duration-200" style={{ zIndex: 300 }}>
       <div className="absolute inset-0" onClick={onCancel} />
-      <div className="relative bg-white rounded-[40px] shadow-2xl p-8 max-w-xs w-full text-center animate-in zoom-in duration-300 border border-slate-100">
-        <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center mx-auto mb-6 shadow-xl ${type === 'danger' ? 'bg-red-50 text-red-600 shadow-red-100' : 'bg-amber-50 text-amber-600 shadow-amber-100'}`}>
-          {type === 'danger' ? <ShieldAlert className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
+      <div className="med-modal max-w-[200px] p-3.5 text-center animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto mb-1.5 ${type === 'danger' ? 'bg-[#EF4444]/15 text-[#EF4444]' : 'bg-[#19CF8D]/15 text-[#19CF8D]'}`}>
+          {type === 'danger' ? <ShieldAlert className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
         </div>
-        <h3 className="font-black text-slate-900 text-xl tracking-tighter mb-2">{title}</h3>
-        <p className="text-[11px] font-bold text-slate-400 mb-8 uppercase tracking-widest leading-relaxed px-4">{message}</p>
-        <div className="flex gap-4">
-          <button onClick={onCancel} className="flex-1 py-3.5 rounded-2xl border-2 border-slate-50 font-black text-[10px] text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-all">Cancelar</button>
-          <button onClick={onConfirm} className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] text-white uppercase tracking-widest transition-all shadow-xl ${type === 'danger' ? 'bg-red-600 hover:bg-red-700 shadow-red-200' : 'bg-amber-600 hover:bg-amber-700 shadow-amber-200'}`}>Confirmar</button>
+        <h3 className="font-bold text-[#E8F0FE] text-sm mb-0.5">{title}</h3>
+        <p className="text-[11px] text-[#8CA3E6] mb-3 leading-relaxed">{message}</p>
+        <div className="flex gap-1.5">
+          <button onClick={onCancel} className="med-btn-secondary flex-1 text-[11px] py-1.5">Cancelar</button>
+          <button onClick={onConfirm} className={`flex-1 py-1.5 rounded-lg font-bold text-[11px] text-white transition-all ${type === 'danger' ? 'med-btn-danger' : 'med-btn-primary'}`}>Confirmar</button>
         </div>
       </div>
     </div>
