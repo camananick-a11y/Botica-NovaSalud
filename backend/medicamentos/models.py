@@ -56,6 +56,7 @@ class Medicamento(models.Model):
     id_categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, db_column='id_categoria')
     id_presentacion = models.ForeignKey(Presentacion, on_delete=models.PROTECT, db_column='id_presentacion')
     id_unidad = models.ForeignKey(Unidad, on_delete=models.PROTECT, db_column='id_unidad')
+    imagen_url = models.URLField(max_length=500, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

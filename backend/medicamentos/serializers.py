@@ -41,7 +41,7 @@ class MedicamentoSerializer(serializers.ModelSerializer):
                   'id_laboratorio', 'laboratorio_nombre',
                   'id_categoria', 'categoria_nombre',
                   'id_presentacion', 'presentacion_nombre',
-                  'id_unidad', 'unidad_nombre', 'stock']
+                  'id_unidad', 'unidad_nombre', 'stock', 'imagen_url']
         
     def get_stock(self, obj):
         stock_obj = StockMedicamento.objects.filter(id_medicamento=obj).first()
