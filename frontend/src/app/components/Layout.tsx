@@ -1,5 +1,5 @@
-import { useState, useEffect, type ReactNode, type ElementType } from 'react'
-import { LayoutDashboard, Package, ShoppingCart, Users, UserCog, Bell, LogOut, Menu, X } from 'lucide-react'
+import { useState, useEffect, useRef, type ReactNode, type ElementType } from 'react'
+import { LayoutDashboard, Package, ShoppingCart, Users, UserCog, Bell, LogOut, Menu, X, AlertTriangle, Package as PackageIcon, X as XIcon } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import type { UserRole } from '../context/AppContext'
 import api from '../../api/axios'
@@ -53,12 +53,31 @@ export function Layout({ active, setActive, children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [alertCount, setAlertCount] = useState(0)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [showNotif, setShowNotif] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
+
+  const fetchAlerts = () => {
+    api.get('/ventas/comprobantes/stock_bajo/', { params: { umbral: 10 } })
+      .then(({ data }) => {
+        setAlertCount(data.length)
+        setNotifications(data)
+      })
+      .catch(() => {})
+  }
 
   useEffect(() => {
-    api.get('/ventas/comprobantes/stock_bajo/', { params: { umbral: 10 } })
-      .then(({ data }) => setAlertCount(data.length))
-      .catch(() => {})
+    fetchAlerts()
   }, [])
+
+  useEffect(() => {
+    if (!showNotif) return
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotif(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showNotif])
 
   if (!user) return null
 
@@ -128,11 +147,51 @@ export function Layout({ active, setActive, children }: LayoutProps) {
             <p className="text-[10px] text-[#8CA3E6] capitalize">{dateStr}</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <button className="w-9 h-9 rounded-lg border border-[#2A3B56] flex items-center justify-center text-[#8CA3E6] hover:text-[#E8F0FE] hover:bg-[#24324A] transition-colors">
+            <div className="relative" ref={notifRef}>
+              <button onClick={() => { if (!showNotif) fetchAlerts(); setShowNotif(!showNotif) }} className="w-9 h-9 rounded-lg border border-[#2A3B56] flex items-center justify-center text-[#8CA3E6] hover:text-[#E8F0FE] hover:bg-[#24324A] transition-colors">
                 <Bell className="w-4 h-4" />
               </button>
               {alertCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#EF4444] text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none">{alertCount}</span>}
+              {showNotif && (
+                <div className="absolute right-0 top-12 w-80 bg-[#1B263B] border border-[#2A3B56] rounded-xl shadow-2xl overflow-hidden z-50">
+                  <div className="px-4 py-3 border-b border-[#2A3B56] flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#E8F0FE]">Notificaciones</h3>
+                    <button onClick={() => setShowNotif(false)} className="text-[#8CA3E6] hover:text-[#E8F0FE]">
+                      <XIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto scrollbar-thin">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <Package className="w-8 h-8 text-[#19CF8D] mx-auto mb-2" />
+                        <p className="text-sm font-medium text-[#8CA3E6]">Todo en orden</p>
+                        <p className="text-[10px] text-[#5F7FB8]">No hay productos con stock crítico</p>
+                      </div>
+                    ) : (
+                      notifications.map((n, i) => (
+                        <div key={i} className="px-4 py-3 border-b border-[#2A3B56]/50 hover:bg-[#24324A] transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-[#EF4444]/15 text-[#EF4444] flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <AlertTriangle className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-[#E8F0FE] truncate">{n.medicamento}</p>
+                              <p className="text-[10px] text-[#EF4444] mt-0.5">Stock crítico: {n.cantidad_actual} unidades</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="px-4 py-2.5 border-t border-[#2A3B56] bg-[#162033]">
+                      <button onClick={() => setActive('medications')} className="w-full text-center text-[10px] font-bold text-[#4EA0FC] uppercase tracking-wider hover:text-[#B5CEFF] transition-colors">
+                        Ir a Inventario
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2.5 pl-3 border-l border-[#2A3B56]">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4EA0FC] to-[#19CF8D] flex items-center justify-center text-white text-xs font-bold shadow-md">{user.avatar}</div>

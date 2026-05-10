@@ -10,6 +10,7 @@ from .serializers import (
     CargoSerializer, 
     LoginSerializer
 )
+from .permissions import IsAdminUser
 
 class CargoViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar cargos de empleados"""
@@ -26,7 +27,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'login':
             return [AllowAny()]
-        return [IsAuthenticated()]
+        if self.action == 'me':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
     
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:

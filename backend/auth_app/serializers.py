@@ -14,7 +14,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         fields = ['id_usuario', 'usuario', 'nombre', 'id_cargo', 'cargo_nombre']
 
 class UsuarioCreateUpdateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
     class Meta:
         model = Usuario
