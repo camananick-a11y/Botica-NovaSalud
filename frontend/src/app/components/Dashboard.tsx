@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, Package, Users, AlertCircle, ShoppingCart, ArrowUpRight, Activity, Calendar, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { TrendingUp, Package, Users, AlertCircle, ShoppingCart, ArrowUpRight, Activity, Calendar, Loader2, AlertTriangle, RefreshCw, FileDown, Search } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts'
 import api from '../../api/axios'
+import * as XLSX from 'xlsx'
 
 const CARD_STYLES: Record<string, { bg: string; iconBg: string; iconColor: string }> = {
   emerald: { bg: 'bg-[#24324A]', iconBg: 'bg-[#19CF8D]/15', iconColor: 'text-[#19CF8D]' },
@@ -18,11 +19,21 @@ function formatSoles(value: number): string {
 }
 
 export function Dashboard() {
+  const today = new Date().toISOString().split('T')[0]
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+  const [startDate, setStartDate] = useState(thirtyDaysAgo)
+  const [endDate, setEndDate] = useState(today)
+  const [appliedStart, setAppliedStart] = useState(thirtyDaysAgo)
+  const [appliedEnd, setAppliedEnd] = useState(today)
   const [stats, setStats] = useState({ total_ventas: 0, total_medicamentos: 0, total_clientes: 0, ventas_mes: 0, stock_bajo: 0, agotados: 0 })
   const [salesTrend, setSalesTrend] = useState<{ date: string; total: number }[]>([])
   const [topProducts, setTopProducts] = useState<{ medicamento: string; total_vendido: number }[]>([])
+  const [topClients, setTopClients] = useState<{ id_cliente__nombre: string; total_compras: number; total_gastado: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+
+  const dateParams = () => `&inicio=${appliedStart}&fin=${appliedEnd}`
 
   useEffect(() => {
     let cancelled = false
@@ -33,8 +44,8 @@ export function Dashboard() {
         setError(null)
 
         const [ventasRes, medsRes, clientesRes] = await Promise.all([
-          api.get('/ventas/comprobantes/'),
-          api.get('/medicamentos/'),
+          api.get(`/ventas/comprobantes/?all=true${dateParams()}`),
+          api.get('/medicamentos/?all=true'),
           api.get('/clientes/'),
         ])
 
@@ -99,7 +110,7 @@ export function Dashboard() {
         })
 
         try {
-          const topRes = await api.get('/ventas/comprobantes/medicamentos_mas_vendidos/')
+          const topRes = await api.get(`/ventas/comprobantes/medicamentos_mas_vendidos/?${dateParams().slice(1)}`)
           if (!cancelled && Array.isArray(topRes.data)) {
             setTopProducts(
               topRes.data.map((item: any) => ({
@@ -110,6 +121,15 @@ export function Dashboard() {
           }
         } catch {
           console.warn('medicamentos_mas_vendidos no accesible (requiere Supervisor)')
+        }
+
+        try {
+          const cliRes = await api.get(`/ventas/comprobantes/clientes_mas_frecuentes/?${dateParams().slice(1)}`)
+          if (!cancelled && Array.isArray(cliRes.data)) {
+            setTopClients(cliRes.data)
+          }
+        } catch {
+          console.warn('clientes_mas_frecuentes no accesible (requiere Supervisor)')
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -127,8 +147,59 @@ export function Dashboard() {
     }
 
     fetchAll()
-    return () => { cancelled = true }
-  }, [])
+
+    const onFocus = () => { if (!cancelled) fetchAll() }
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchAll() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedStart, appliedEnd])
+
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true)
+      const res = await api.get('/ventas/comprobantes/exportar/')
+      const data = res.data.results ?? res.data ?? []
+
+      const rows = (Array.isArray(data) ? data : []).map((item: any) => ({
+        'Serie': item.serie ?? '',
+        'Tipo': item.tipo ?? '',
+        'Fecha': item.fecha ? new Date(item.fecha).toLocaleDateString('es-ES') : '',
+        'Cliente': item.cliente_nombre ?? '',
+        'Documento': item.cliente_numero_documento ?? '',
+        'Total (S/)': Number(item.total) || 0,
+        'Usuario': item.usuario_nombre ?? '',
+        'Productos': (item.detalles ?? []).map((d: any) => `${d.medicamento_nombre} x${d.cantidad}`).join(', '),
+      }))
+
+      if (rows.length === 0) {
+        alert('No hay ventas para exportar.')
+        return
+      }
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows)
+
+      const colWidths = Object.keys(rows[0]).map(k => ({
+        wch: Math.max(k.length, ...rows.map(r => String(r[k] ?? '').length)) + 2
+      }))
+      ws['!cols'] = colWidths
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Ventas')
+      XLSX.writeFile(wb, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`)
+    } catch (err: any) {
+      console.error('Error exportando Excel:', err)
+      alert('Error al exportar el reporte de ventas.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const cards = [
     { title: 'Ventas', value: stats.total_ventas, icon: ShoppingCart, color: 'emerald' as const },
@@ -196,11 +267,27 @@ export function Dashboard() {
               <Activity className="w-3 h-3 text-[#19CF8D]" /> Rendimiento en vivo
             </p>
           </div>
-          <div className="hidden sm:flex items-center gap-3 med-card-dark px-4 py-2">
-            <Calendar className="w-4 h-4 text-[#8CA3E6]" />
-            <span className="text-[10px] font-black text-[#8CA3E6] uppercase tracking-widest">
-              {new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </span>
+          <div className="hidden sm:flex items-center gap-3">
+            <div className="flex items-center gap-2 med-card-dark px-3 py-2">
+              <Calendar className="w-4 h-4 text-[#8CA3E6]" />
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                className="bg-transparent text-[10px] font-bold text-[#E8F0FE] outline-none w-[110px] [color-scheme:dark]" />
+              <span className="text-[#5F7FB8] text-[10px]">→</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                className="bg-transparent text-[10px] font-bold text-[#E8F0FE] outline-none w-[110px] [color-scheme:dark]" />
+            </div>
+            <button onClick={() => { setAppliedStart(startDate); setAppliedEnd(endDate) }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#4EA0FC] hover:bg-[#3B82F6] transition-all text-white text-[10px] font-black uppercase tracking-widest">
+              <Search className="w-3.5 h-3.5" /> Verificar
+            </button>
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#19CF8D] hover:bg-[#15B87C] disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[#1B263B] text-[10px] font-black uppercase tracking-widest"
+            >
+              <FileDown className="w-4 h-4" />
+              {exporting ? 'Exportando...' : 'Exportar Excel'}
+            </button>
           </div>
         </div>
 
@@ -220,6 +307,7 @@ export function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6">
+          <div className="space-y-6">
           <div className="med-card-dark p-6 sm:p-8">
             <div className="flex items-center justify-between gap-4 mb-8">
               <div>
@@ -251,6 +339,40 @@ export function Dashboard() {
               ) : (
                 <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Sin ventas en los últimos 7 días</div>
               )}
+            </div>
+          </div>
+
+            <div className="med-card-dark p-6 sm:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-[#E8F0FE] tracking-tighter">Top Clientes</h3>
+                  <p className="med-section-title mt-1">Por volumen de compras</p>
+                </div>
+                {topClients.length > 0 && (
+                  <div className="text-right med-section-title">Top {topClients.length}</div>
+                )}
+              </div>
+              <div className="space-y-3">
+                {topClients.length > 0 ? (
+                  topClients.slice(0, 5).map((client, index) => (
+                    <div key={client.id_cliente__nombre} className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-[#24324A]">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black"
+                          style={{ backgroundColor: TOP_COLORS[index % TOP_COLORS.length] + '25', color: TOP_COLORS[index % TOP_COLORS.length] }}>
+                          {index + 1}
+                        </span>
+                        <p className="med-section-title truncate">{client.id_cliente__nombre}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-black text-[#E8F0FE]">{client.total_compras} compras</p>
+                        <p className="text-[10px] font-semibold text-[#19CF8D]">{formatSoles(Number(client.total_gastado))}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-32 flex items-center justify-center text-[#8CA3E6] text-sm">Datos no disponibles</div>
+                )}
+              </div>
             </div>
           </div>
 

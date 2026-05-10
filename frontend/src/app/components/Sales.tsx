@@ -32,9 +32,10 @@ export function Sales() {
   const cartRef = useRef(cart)
   cartRef.current = cart
 
+  const fetchMedicamentos = () => api.get('/medicamentos/?all=true').then(({ data }) => { setMedicamentos(data.results || data) }).catch(() => {})
+
   useEffect(() => {
-    Promise.all([api.get('/medicamentos/'), api.get('/clientes/')]).then(([medRes, cliRes]) => {
-      setMedicamentos(medRes.data.results || medRes.data)
+    Promise.all([fetchMedicamentos(), api.get('/clientes/')]).then(([_, cliRes]) => {
       setClientes(cliRes.data.results || cliRes.data)
     }).catch(() => {})
   }, [])
@@ -283,7 +284,7 @@ export function Sales() {
     } catch (err: any) { setError('Error en venta') } finally { setSaving(false) }
   }
 
-  function newSale() { setDone(null); setCart([]); setCustomer(''); setCashGiven(''); }
+  function newSale() { setDone(null); setCart([]); setCustomer(''); setCashGiven(''); fetchMedicamentos() }
 
   if (done) {
     return (

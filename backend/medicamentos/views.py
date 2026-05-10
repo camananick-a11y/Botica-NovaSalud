@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from auth_app.permissions import IsAlmacenero
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -46,8 +47,17 @@ class MedicamentoViewSet(viewsets.ModelViewSet):
         Prefetch('stockmedicamento_set', queryset=StockMedicamento.objects.all())
     ).all()
     serializer_class = MedicamentoSerializer
-    permission_classes = [IsAlmacenero]
     search_fields = ['nombre']
+
+    def list(self, request, *args, **kwargs):
+        if request.query_params.get('all'):
+            self.pagination_class = None
+        return super().list(request, *args, **kwargs)
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return [IsAlmacenero()]
     
     def create(self, request, *args, **kwargs):
         data = request.data.copy()

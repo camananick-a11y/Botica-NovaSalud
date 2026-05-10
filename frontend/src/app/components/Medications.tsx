@@ -469,7 +469,7 @@ export function Medications() {
   const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<'todos' | 'bajo' | 'disponible'>('todos')
 
-  const fetchMedicamentos = () => { setLoading(true); api.get('/medicamentos/').then(({ data }) => { setMedicamentos(data.results || data) }).finally(() => setLoading(false)) }
+  const fetchMedicamentos = () => { setLoading(true); api.get('/medicamentos/?all=true').then(({ data }) => { setMedicamentos(data.results || data) }).finally(() => setLoading(false)) }
   useEffect(() => { fetchMedicamentos() }, [])
 
   const filtered = useMemo(() => {
