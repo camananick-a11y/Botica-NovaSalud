@@ -3,7 +3,8 @@ from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from auth_app.permissions import IsAlmacenero
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
+from django.utils import timezone
 from .models import Laboratorio, Categoria, Presentacion, Unidad, Medicamento, StockMedicamento
 from .serializers import (
     LaboratorioSerializer, CategoriaSerializer, PresentacionSerializer, 
@@ -39,6 +40,17 @@ class StockMedicamentoViewSet(viewsets.ModelViewSet):
     serializer_class = StockMedicamentoSerializer
     permission_classes = [IsAlmacenero]
     filterset_fields = ['id_medicamento']
+
+    @action(detail=False, methods=['post'])
+    def ajustar(self, request):
+        id_med = request.data.get('id_medicamento')
+        nuevo_stock = request.data.get('nuevo_stock')
+        if not id_med or nuevo_stock is None:
+            return Response({'error': 'id_medicamento y nuevo_stock requeridos'}, status=400)
+        stock, _ = StockMedicamento.objects.get_or_create(id_medicamento_id=id_med)
+        stock.cantidad = int(nuevo_stock)
+        stock.save()
+        return Response({'id_medicamento': id_med, 'nuevo_stock': stock.cantidad})
 
 class MedicamentoViewSet(viewsets.ModelViewSet):
     queryset = Medicamento.objects.select_related(

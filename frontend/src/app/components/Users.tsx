@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
-import { Plus, Trash2, X, Hash, Lock, Loader2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plus, Trash2, X, Hash, Lock, Loader2, Camera, Eye, EyeOff } from 'lucide-react'
 import api from '../../api/axios'
+import { supabase } from '../../api/supabase'
 import { ConfirmModal } from './ConfirmModal'
+import toast from 'react-hot-toast'
 
 function initials(name: string) { return name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() }
 
@@ -19,22 +21,50 @@ const ROLE_STYLE: Record<string, { bg: string; text: string; border: string }> =
 
 function AddUserModal({ onClose, onSuccess, cargos, editUser }: { onClose: () => void; onSuccess: () => void; cargos: any[]; editUser?: any }) {
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState(editUser ? { usuario: editUser.usuario, nombre: editUser.nombre, id_cargo: editUser.id_cargo.toString(), password: '' } : { usuario: '', nombre: '', id_cargo: '', password: '' })
+  const [form, setForm] = useState(editUser ? { usuario: editUser.usuario, nombre: editUser.nombre, id_cargo: editUser.id_cargo.toString(), password: '', confirmPassword: '', imagen_url: editUser.imagen_url || '' } : { usuario: '', nombre: '', id_cargo: '', password: '', confirmPassword: '', imagen_url: '' })
+  const [showConfirmSave, setShowConfirmSave] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('La imagen no debe superar 2MB')
+      return
+    }
+    setSelectedFile(file)
+    setPreview(URL.createObjectURL(file))
+  }
+
+  async function handleSubmit() {
+    if (form.password && form.password !== form.confirmPassword) {
+      toast.error('Las contraseñas no coinciden'); setSaving(false); return
+    }
+    setSaving(true)
     try {
-      const payload = { ...form, id_cargo: parseInt(form.id_cargo) }
+      let imagen_url = form.imagen_url
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop()
+        const fileName = `avatars/${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, selectedFile)
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(fileName)
+        imagen_url = publicUrl
+      }
+      const payload = { usuario: form.usuario, nombre: form.nombre, id_cargo: parseInt(form.id_cargo), password: form.password, imagen_url }
       if (editUser) await api.put(`/auth/usuarios/${editUser.id_usuario}/`, payload)
       else await api.post('/auth/usuarios/', payload)
       onSuccess()
-    } catch { alert('Error al guardar usuario') } finally { setSaving(false) }
+      toast.success(editUser ? 'Usuario actualizado' : 'Usuario creado exitosamente')
+    } catch { toast.error('Error al guardar usuario') } finally { setSaving(false) }
   }
 
   return (
     <div className="med-modal-overlay" style={{ zIndex: 100 }}>
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="med-modal max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="med-modal" onClick={(e) => e.stopPropagation()} style={{ width: '450px' }}>
         <div className="px-6 py-4 border-b border-[#2A3B56] flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#E8F0FE]">{editUser ? 'Configurar Perfil' : 'Nuevo Acceso'}</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg border border-[#2A3B56] text-[#8CA3E6] hover:text-[#E8F0FE] hover:bg-[#24324A] transition-all flex items-center justify-center">
@@ -42,12 +72,30 @@ function AddUserModal({ onClose, onSuccess, cargos, editUser }: { onClose: () =>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+        <form className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+          <div className="flex justify-center">
+            <div className="relative group">
+              <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#4EA0FC]/40 bg-[#24324A]">
+                {preview || (editUser && editUser.imagen_url) ? (
+                  <img src={preview || editUser.imagen_url} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xl font-bold text-[#E8F0FE] bg-gradient-to-br from-[#4EA0FC] to-[#19CF8D]">
+                    {initials(form.nombre || '?')}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => fileRef.current?.click()} type="button" className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#4EA0FC] hover:bg-[#3A8FDF] text-white flex items-center justify-center shadow-lg transition-colors">
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+            </div>
+          </div>
+
           <div className="space-y-3">
             <p className="med-section-title">Datos Personales</p>
             <div>
               <label className="med-label">Nombre y Apellido</label>
-              <input required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})}
+              <input required value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })}
                 className="med-input" placeholder="Ej: Carlos García" />
             </div>
           </div>
@@ -57,33 +105,52 @@ function AddUserModal({ onClose, onSuccess, cargos, editUser }: { onClose: () =>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="med-label">Usuario de Sistema</label>
-                <input required value={form.usuario} onChange={e => setForm({...form, usuario: e.target.value})}
+                <input required value={form.usuario} onChange={e => setForm({ ...form, usuario: e.target.value })}
                   className="med-input" placeholder="ej: vendedor1" />
               </div>
               <div>
                 <label className="med-label">Rol Asignado</label>
-                <select required value={form.id_cargo} onChange={e => setForm({...form, id_cargo: e.target.value})}
+                <select required value={form.id_cargo} onChange={e => setForm({ ...form, id_cargo: e.target.value })}
                   className="med-select">
                   <option value="">Seleccionar...</option>
                   {cargos.map((c: any) => <option key={c.id_cargo} value={c.id_cargo}>{c.nombre}</option>)}
                 </select>
               </div>
             </div>
-            <div>
+            <div className="relative">
               <label className="med-label">Contraseña {editUser && '(dejar en blanco para mantener)'}</label>
-              <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})}
+              <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                 className="med-input" placeholder="••••••••" />
             </div>
+            {form.password && (
+              <div className="relative">
+                <label className="med-label">Confirmar Contraseña</label>
+                <input type="password" value={form.confirmPassword || ''} onChange={e => setForm({ ...form, confirmPassword: e.target.value })}
+                  className={`med-input ${form.password !== form.confirmPassword && form.confirmPassword ? 'border-[#EF4444]' : ''}`} placeholder="Repite la contraseña" />
+                {form.password !== form.confirmPassword && form.confirmPassword && (
+                  <p className="text-[9px] text-[#EF4444] mt-1 font-medium">Las contraseñas no coinciden</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="med-btn-secondary flex-1 text-sm">Cancelar</button>
-            <button type="submit" disabled={saving} className="med-btn-primary flex-[2] text-sm">
+            <button type="button" onClick={() => setShowConfirmSave(true)} disabled={saving} className="med-btn-primary flex-[2] text-sm">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Plus className="w-4 h-4" /> {editUser ? 'Confirmar Cambios' : 'Crear Usuario'}</>}
             </button>
           </div>
         </form>
       </div>
+      {showConfirmSave && (
+        <ConfirmModal
+          title={editUser ? 'Guardar Cambios' : 'Crear Usuario'}
+          message={editUser ? '¿Confirmar los cambios en este usuario?' : '¿Confirmar el registro de este usuario?'}
+          onConfirm={() => { setShowConfirmSave(false); handleSubmit() }}
+          onCancel={() => setShowConfirmSave(false)}
+          type="warning"
+        />
+      )}
     </div>
   )
 }
@@ -120,7 +187,11 @@ export function Users() {
             return (
               <div key={u.id_usuario} className="med-card-dark p-6 flex flex-col hover:-translate-y-1 transition-all">
                 <div className="flex items-center gap-4 mb-5">
-                  <div className={`w-14 h-14 rounded-[20px] bg-gradient-to-br ${grad} flex items-center justify-center text-white text-lg font-black`}>{initials(u.nombre)}</div>
+                  {u.imagen_url ? (
+                    <img src={u.imagen_url} alt="" className="w-14 h-14 rounded-[20px] object-cover ring-2 ring-[#4EA0FC]/40" />
+                  ) : (
+                    <div className={`w-14 h-14 rounded-[20px] bg-gradient-to-br ${grad} flex items-center justify-center text-white text-lg font-black`}>{initials(u.nombre)}</div>
+                  )}
                   <div className="min-w-0">
                     <h4 className="font-black text-[#E8F0FE] text-sm tracking-tight leading-tight truncate">{u.nombre}</h4>
                     <span className={`inline-block mt-1 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${style.bg} ${style.text} ${style.border}`}>{u.cargo_nombre}</span>

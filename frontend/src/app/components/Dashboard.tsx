@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Package, Users, AlertCircle, ShoppingCart, ArrowUpRight, Activity, Calendar, Loader2, AlertTriangle, RefreshCw, FileDown, Search } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts'
 import api from '../../api/axios'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
+import { useApp } from '../context/AppContext'
 
 const CARD_STYLES: Record<string, { bg: string; iconBg: string; iconColor: string }> = {
   emerald: { bg: 'bg-[#24324A]', iconBg: 'bg-[#19CF8D]/15', iconColor: 'text-[#19CF8D]' },
@@ -18,13 +20,19 @@ function formatSoles(value: number): string {
   return `S/ ${value.toFixed(2)}`
 }
 
-export function Dashboard() {
-  const today = new Date().toISOString().split('T')[0]
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
-  const [startDate, setStartDate] = useState(thirtyDaysAgo)
-  const [endDate, setEndDate] = useState(today)
-  const [appliedStart, setAppliedStart] = useState(thirtyDaysAgo)
-  const [appliedEnd, setAppliedEnd] = useState(today)
+export function Dashboard(_props?: any) {
+  const { user } = useApp()
+  const navigate = useNavigate()
+  const today = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  const todayStr = today.toISOString().split('T')[0]
+  const firstDayStr = firstDay.toISOString().split('T')[0]
+  const lastDayStr = lastDay.toISOString().split('T')[0]
+  const [startDate, setStartDate] = useState(firstDayStr)
+  const [endDate, setEndDate] = useState(lastDayStr)
+  const [appliedStart, setAppliedStart] = useState(firstDayStr)
+  const [appliedEnd, setAppliedEnd] = useState(lastDayStr)
   const [stats, setStats] = useState({ total_ventas: 0, total_medicamentos: 0, total_clientes: 0, ventas_mes: 0, stock_bajo: 0, agotados: 0 })
   const [salesTrend, setSalesTrend] = useState<{ date: string; total: number }[]>([])
   const [topProducts, setTopProducts] = useState<{ medicamento: string; total_vendido: number }[]>([])
@@ -32,16 +40,20 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const lastFetchRef = useRef(0)
 
   const dateParams = () => `&inicio=${appliedStart}&fin=${appliedEnd}`
 
   useEffect(() => {
     let cancelled = false
+    const MIN_FETCH_INTERVAL = 30000
 
-    const fetchAll = async () => {
+    const fetchAll = async (isBackground = false) => {
       try {
-        setLoading(true)
+        if (!isBackground) setLoading(true)
         setError(null)
+
+        const canViewReports = user?.role === 'Administrador' || user?.role === 'Supervisor'
 
         const [ventasRes, medsRes, clientesRes] = await Promise.all([
           api.get(`/ventas/comprobantes/?all=true${dateParams()}`),
@@ -49,11 +61,20 @@ export function Dashboard() {
           api.get('/clientes/'),
         ])
 
+        let topRes = null
+        let cliRes = null
+        if (canViewReports) {
+          topRes = await api.get(`/ventas/comprobantes/medicamentos_mas_vendidos/?${dateParams().slice(1)}`).catch(() => null)
+          cliRes = await api.get(`/ventas/comprobantes/clientes_mas_frecuentes/?${dateParams().slice(1)}`).catch(() => null)
+        }
+
         if (cancelled) return
 
-        const comprobantes = ventasRes.data.results || ventasRes.data
-        const medicamentos = medsRes.data.results || medsRes.data
-        const clientesData = clientesRes.data.results || clientesRes.data
+        lastFetchRef.current = Date.now()
+
+        const comprobantes = ventasRes?.data?.results ?? ventasRes?.data ?? []
+        const medicamentos = medsRes?.data?.results ?? medsRes?.data ?? []
+        const clientesData = clientesRes?.data?.results ?? clientesRes?.data ?? []
 
         const now = new Date()
         const currentMonth = now.getMonth()
@@ -68,15 +89,16 @@ export function Dashboard() {
           return s === 0 || isNaN(s)
         })
 
-        const sevenDaysAgo = new Date(now)
-        sevenDaysAgo.setDate(now.getDate() - 6)
-        sevenDaysAgo.setHours(0, 0, 0, 0)
+        const rangeStart = new Date(appliedStart + 'T00:00:00')
+        const rangeEnd = new Date(appliedEnd + 'T00:00:00')
+        rangeEnd.setHours(23, 59, 59, 999)
 
         const dayTotals: Record<string, number> = {}
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(sevenDaysAgo)
-          d.setDate(sevenDaysAgo.getDate() + i)
-          dayTotals[d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })] = 0
+        const cursor = new Date(rangeStart)
+        while (cursor <= rangeEnd) {
+          const key = cursor.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
+          dayTotals[key] = 0
+          cursor.setDate(cursor.getDate() + 1)
         }
 
         let monthlyTotal = 0
@@ -84,11 +106,9 @@ export function Dashboard() {
           const saleDate = new Date(sale.fecha)
           const total = Number(sale.total) || 0
 
-          if (saleDate >= sevenDaysAgo) {
-            const key = saleDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
-            if (key in dayTotals) {
-              dayTotals[key] += total
-            }
+          const key = saleDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
+          if (key in dayTotals) {
+            dayTotals[key] += total
           }
 
           if (saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear) {
@@ -101,38 +121,28 @@ export function Dashboard() {
         )
 
         setStats({
-          total_ventas: ventasRes.data.count ?? comprobantes.length,
-          total_medicamentos: medsRes.data.count ?? medicamentos.length,
-          total_clientes: clientesRes.data.count ?? clientesData.length,
+          total_ventas: ventasRes?.data?.count ?? comprobantes.length,
+          total_medicamentos: medsRes?.data?.count ?? medicamentos.length,
+          total_clientes: clientesRes?.data?.count ?? clientesData.length,
           ventas_mes: monthlyTotal,
           stock_bajo: lowStockItems.length,
           agotados: outOfStock.length,
         })
 
-        try {
-          const topRes = await api.get(`/ventas/comprobantes/medicamentos_mas_vendidos/?${dateParams().slice(1)}`)
-          if (!cancelled && Array.isArray(topRes.data)) {
-            setTopProducts(
-              topRes.data.map((item: any) => ({
-                medicamento: item.id_medicamento__nombre || 'Desconocido',
-                total_vendido: Number(item.total_vendido) || 0,
-              }))
-            )
-          }
-        } catch {
-          console.warn('medicamentos_mas_vendidos no accesible (requiere Supervisor)')
+        if (topRes && Array.isArray(topRes.data)) {
+          setTopProducts(
+            topRes.data.map((item: any) => ({
+              medicamento: item.id_medicamento__nombre || 'Desconocido',
+              total_vendido: Number(item.total_vendido) || 0,
+            }))
+          )
         }
 
-        try {
-          const cliRes = await api.get(`/ventas/comprobantes/clientes_mas_frecuentes/?${dateParams().slice(1)}`)
-          if (!cancelled && Array.isArray(cliRes.data)) {
-            setTopClients(cliRes.data)
-          }
-        } catch {
-          console.warn('clientes_mas_frecuentes no accesible (requiere Supervisor)')
+        if (cliRes && Array.isArray(cliRes.data)) {
+          setTopClients(cliRes.data)
         }
       } catch (err: any) {
-        if (!cancelled) {
+        if (!cancelled && !isBackground) {
           const msg = err?.response?.data
             ? typeof err.response.data === 'string'
               ? err.response.data
@@ -142,14 +152,22 @@ export function Dashboard() {
           console.error('Dashboard fetch error:', err)
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && !isBackground) setLoading(false)
       }
     }
 
     fetchAll()
 
-    const onFocus = () => { if (!cancelled) fetchAll() }
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchAll() }
+    const onFocus = () => {
+      if (cancelled) return
+      if (Date.now() - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+      fetchAll(true)
+    }
+    const onVisible = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (Date.now() - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+      fetchAll(true)
+    }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisible)
 
@@ -183,16 +201,23 @@ export function Dashboard() {
         return
       }
 
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(rows)
-
-      const colWidths = Object.keys(rows[0]).map(k => ({
-        wch: Math.max(k.length, ...rows.map(r => String(r[k] ?? '').length)) + 2
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Ventas')
+      worksheet.columns = Object.keys(rows[0]).map(k => ({
+        header: k,
+        key: k,
+        width: Math.max(k.length, ...rows.map(r => String(r[k] ?? '').length)) + 2
       }))
-      ws['!cols'] = colWidths
+      rows.forEach(row => worksheet.addRow(row))
 
-      XLSX.utils.book_append_sheet(wb, ws, 'Ventas')
-      XLSX.writeFile(wb, `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`)
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `reporte_ventas_${new Date().toISOString().split('T')[0]}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
     } catch (err: any) {
       console.error('Error exportando Excel:', err)
       alert('Error al exportar el reporte de ventas.')
@@ -202,11 +227,11 @@ export function Dashboard() {
   }
 
   const cards = [
-    { title: 'Ventas', value: stats.total_ventas, icon: ShoppingCart, color: 'emerald' as const },
-    { title: 'Productos', value: stats.total_medicamentos, icon: Package, color: 'blue' as const },
-    { title: 'Clientes', value: stats.total_clientes, icon: Users, color: 'purple' as const },
-    { title: 'Stock Bajo', value: stats.stock_bajo, icon: AlertCircle, color: 'red' as const },
-    { title: 'Agotados', value: stats.agotados, icon: AlertTriangle, color: 'amber' as const },
+    { title: 'Ventas', value: stats.total_ventas, icon: ShoppingCart, color: 'emerald' as const, path: '/sales' },
+    { title: 'Productos', value: stats.total_medicamentos, icon: Package, color: 'blue' as const, path: '/medications' },
+    { title: 'Clientes', value: stats.total_clientes, icon: Users, color: 'purple' as const, path: '/customers' },
+    { title: 'Stock Bajo', value: stats.stock_bajo, icon: AlertCircle, color: 'red' as const, path: '/medications', state: { stockFilter: 'bajo' } },
+    { title: 'Agotados', value: stats.agotados, icon: AlertTriangle, color: 'amber' as const, path: '/medications', state: { stockFilter: 'agotados' } },
   ]
 
   const stockOk = Math.max(0, stats.total_medicamentos - stats.stock_bajo - stats.agotados)
@@ -293,7 +318,8 @@ export function Dashboard() {
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
           {cards.map((card, index) => (
-            <div key={index} className="med-card-dark p-5">
+            <button key={index} onClick={() => navigate(card.path, { state: card.state })}
+              className="med-card-dark p-5 text-left cursor-pointer hover:border-[#4EA0FC]/50 transition-all active:scale-[0.98]">
               <div className="flex justify-between items-start mb-4">
                 <div className={`w-10 h-10 rounded-xl ${CARD_STYLES[card.color].iconBg} ${CARD_STYLES[card.color].iconColor} flex items-center justify-center`}>
                   <card.icon className="w-5 h-5" />
@@ -302,7 +328,7 @@ export function Dashboard() {
               </div>
               <p className="med-section-title mb-0.5">{card.title}</p>
               <h3 className="text-2xl font-black text-[#E8F0FE] tracking-tighter">{card.value}</h3>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -312,7 +338,7 @@ export function Dashboard() {
             <div className="flex items-center justify-between gap-4 mb-8">
               <div>
                 <h2 className="text-xl font-black text-[#E8F0FE] tracking-tighter">Tendencia de Ventas</h2>
-                <p className="med-section-title mt-1">Últimos 7 días</p>
+                <p className="med-section-title mt-1">{appliedStart === appliedEnd ? '1 día' : `${new Date(appliedStart + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - ${new Date(appliedEnd + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`}</p>
               </div>
               <div className="text-right">
                 <p className="med-section-title">Ingresos del periodo</p>
@@ -337,7 +363,7 @@ export function Dashboard() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Sin ventas en los últimos 7 días</div>
+                <div className="h-full flex items-center justify-center text-[#8CA3E6] text-sm">Sin ventas en el período seleccionado</div>
               )}
             </div>
           </div>
@@ -377,7 +403,7 @@ export function Dashboard() {
           </div>
 
           <div className="space-y-6">
-            <div className="med-card-dark p-6 sm:p-8">
+            <button onClick={() => navigate('/product-sales')} className="w-full text-left med-card-dark p-6 sm:p-8 cursor-pointer hover:border-[#4EA0FC]/50 transition-all active:scale-[0.98]">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h3 className="text-lg font-black text-[#E8F0FE] tracking-tighter">Top Medicamentos</h3>
@@ -387,7 +413,7 @@ export function Dashboard() {
                   <div className="text-right med-section-title">Total {topProducts.length}</div>
                 )}
               </div>
-              <div className="h-64">
+              <div className="h-64 pointer-events-none">
                 {topProducts.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={topProducts.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
@@ -413,9 +439,10 @@ export function Dashboard() {
                       <span className="text-sm font-black text-[#E8F0FE] shrink-0">{product.total_vendido}</span>
                     </div>
                   ))}
+                  <div className="pt-2 text-center text-[9px] font-bold text-[#4EA0FC] uppercase tracking-wider">Ver detalle completo →</div>
                 </div>
               )}
-            </div>
+            </button>
 
             <div className="med-card-dark p-6 sm:p-8">
               <div className="flex items-center justify-between mb-6">

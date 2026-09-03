@@ -1,7 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, Phone, Mail, MapPin, X, Users as UsersIcon, CreditCard, Loader2 } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Search, Plus, Phone, Mail, MapPin, X, Users as UsersIcon, CreditCard, Loader2, Camera, Download } from 'lucide-react'
 import api from '../../api/axios'
+import { supabase } from '../../api/supabase'
 import { ConfirmModal } from './ConfirmModal'
+import toast from 'react-hot-toast'
+import ExcelJS from 'exceljs'
 
 function initials(name: string) { return name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() }
 
@@ -15,16 +18,20 @@ function CustomerCard({ c, onSelect }: { c: any; onSelect: (c: any) => void }) {
   return (
     <div onClick={() => onSelect(c)} className="med-card-dark p-5 cursor-pointer hover:-translate-y-1 transition-all flex flex-col">
       <div className="flex items-start gap-4 mb-5">
-        <div className={`w-12 h-12 rounded-[18px] bg-gradient-to-br ${grad} flex items-center justify-center flex-shrink-0`}>
-          <span className="text-white font-black text-xs">{initials(c.nombre)}</span>
-        </div>
+        {c.imagen_url ? (
+          <img src={c.imagen_url} alt="" className="w-12 h-12 rounded-[18px] object-cover ring-2 ring-[#4EA0FC]/40 flex-shrink-0" />
+        ) : (
+          <div className={`w-12 h-12 rounded-[18px] bg-gradient-to-br ${grad} flex items-center justify-center flex-shrink-0`}>
+            <span className="text-white font-black text-xs">{initials(c.nombre)}</span>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <h4 className="font-black text-[#E8F0FE] text-[13px] leading-tight mb-1">{c.nombre}</h4>
           <div className="flex items-center gap-1.5"><CreditCard className="w-3 h-3 text-[#5F7FB8]" /><span className="text-[10px] text-[#8CA3E6] font-bold">{c.tipo_documento}: {c.numero_documento}</span></div>
         </div>
       </div>
       <div className="space-y-3 pt-4 border-t border-[#2A3B56]">
-        {[ { icon: Phone, text: c.telefono }, { icon: Mail, text: c.correo } ].map((item, i) => (
+        {[{ icon: Phone, text: c.telefono }, { icon: Mail, text: c.correo }].map((item, i) => (
           <div key={i} className="flex items-center gap-3 text-[10px] font-bold text-[#8CA3E6]"><item.icon className="w-3.5 h-3.5 text-[#5F7FB8]" /><span className="truncate">{item.text || '-'}</span></div>
         ))}
       </div>
@@ -38,26 +45,68 @@ function DetailModal({ c, onClose, onUpdate }: { c: any; onClose: () => void; on
   const [showConfirmSave, setShowConfirmSave] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(c)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (c) setForm(c) }, [c])
   if (!c) return null
   const grad = AVATAR_GRADIENTS[(c.id_cliente || c.id) % AVATAR_GRADIENTS.length]
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('La imagen no debe superar 2MB')
+      return
+    }
+    setSelectedFile(file)
+    setPreview(URL.createObjectURL(file))
+  }
+
   async function handleSave() {
     setSaving(true)
     try {
-      await api.put(`/clientes/${c.id_cliente}/`, form)
+      let imagen_url = form.imagen_url
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop()
+        const fileName = `avatars/${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, selectedFile)
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(fileName)
+        imagen_url = publicUrl
+      }
+      await api.put(`/clientes/${c.id_cliente}/`, { ...form, imagen_url })
       onUpdate(); setIsEditing(false)
-    } catch (err) { alert('Error') } finally { setSaving(false) }
+      setSelectedFile(null)
+      setPreview(null)
+      toast.success('Cliente actualizado')
+    } catch (err) { toast.error('Error al actualizar cliente') } finally { setSaving(false) }
   }
 
   return (
     <>
       <div className="med-modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <div className="med-modal max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="med-modal" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
           <div className={`bg-gradient-to-br ${grad} p-8 text-center relative`}>
-            <div className="w-16 h-16 rounded-[22px] bg-white/20 flex items-center justify-center mx-auto mb-4 border border-white/20">
-              <span className="text-white font-black text-2xl">{initials(c.nombre)}</span>
+            <div className="relative w-16 h-16 mx-auto mb-4">
+              <div className="w-16 h-16 rounded-[22px] overflow-hidden ring-2 ring-white/20 bg-white/20">
+                {preview || c.imagen_url ? (
+                  <img src={preview || c.imagen_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="text-white font-black text-2xl">{initials(c.nombre)}</span>
+                  </div>
+                )}
+              </div>
+              {isEditing && (
+                <>
+                  <button onClick={() => fileRef.current?.click()} type="button" className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#4EA0FC] hover:bg-[#3A8FDF] text-white flex items-center justify-center shadow-lg transition-colors">
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+                </>
+              )}
             </div>
             <h3 className="text-white font-black text-xl tracking-tighter mb-1">{c.nombre}</h3>
             <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">{c.tipo_documento}: {c.numero_documento}</p>
@@ -66,8 +115,8 @@ function DetailModal({ c, onClose, onUpdate }: { c: any; onClose: () => void; on
           <div className="p-8 space-y-5">
             {isEditing ? (
               <div className="space-y-4">
-                {[ { label: 'Teléfono', key: 'telefono' }, { label: 'Correo', key: 'correo' }, { label: 'Dirección', key: 'direccion' } ].map(f => (
-                  <div key={f.key}><label className="med-label">{f.label}</label><input value={form[f.key] || ''} onChange={e => setForm({...form, [f.key]: e.target.value})} className="med-input" /></div>
+                {[{ label: 'Teléfono', key: 'telefono' }, { label: 'Correo', key: 'correo' }, { label: 'Dirección', key: 'direccion' }].map(f => (
+                  <div key={f.key}><label className="med-label">{f.label}</label><input value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })} className="med-input" /></div>
                 ))}
                 <div className="flex gap-3 pt-2">
                   <button onClick={() => setIsEditing(false)} className="med-btn-secondary flex-1 text-[10px] uppercase tracking-widest">Cerrar</button>
@@ -77,7 +126,7 @@ function DetailModal({ c, onClose, onUpdate }: { c: any; onClose: () => void; on
             ) : (
               <>
                 <div className="space-y-4">
-                  {[ { label: 'Contacto Directo', val: c.telefono || '-', icon: Phone }, { label: 'Correo Electrónico', val: c.correo || '-', icon: Mail }, { label: 'Domicilio', val: c.direccion || '-', icon: MapPin } ].map((f, i) => (
+                  {[{ label: 'Contacto Directo', val: c.telefono || '-', icon: Phone }, { label: 'Correo Electrónico', val: c.correo || '-', icon: Mail }, { label: 'Domicilio', val: c.direccion || '-', icon: MapPin }].map((f, i) => (
                     <div key={i} className="flex items-center gap-4 bg-[#24324A] p-3 rounded-2xl">
                       <div className="w-9 h-9 rounded-xl bg-[#2A3B56] flex items-center justify-center text-[#8CA3E6]"><f.icon className="w-4 h-4" /></div>
                       <div><p className="med-section-title mb-1">{f.label}</p><p className="text-xs font-black text-[#E8F0FE]">{f.val}</p></div>
@@ -101,20 +150,45 @@ function DetailModal({ c, onClose, onUpdate }: { c: any; onClose: () => void; on
 
 function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ nombre: '', tipo_documento: 'DNI', numero_documento: '', telefono: '', correo: '', direccion: '' })
+  const [form, setForm] = useState({ nombre: '', tipo_documento: 'DNI', numero_documento: '', telefono: '', correo: '', direccion: '', imagen_url: '' })
+  const [showConfirmCreate, setShowConfirmCreate] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('La imagen no debe superar 2MB')
+      return
+    }
+    setSelectedFile(file)
+    setPreview(URL.createObjectURL(file))
+  }
+
+  async function handleSubmit() {
+    setSaving(true)
     try {
-      await api.post('/clientes/', form)
+      let imagen_url = form.imagen_url
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop()
+        const fileName = `avatars/${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('images').upload(fileName, selectedFile)
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(fileName)
+        imagen_url = publicUrl
+      }
+      await api.post('/clientes/', { ...form, imagen_url })
       onSuccess()
-    } catch { alert('Error al crear cliente') } finally { setSaving(false) }
+      toast.success('Cliente registrado exitosamente')
+    } catch { toast.error('Error al crear cliente') } finally { setSaving(false) }
   }
 
   return (
     <div className="med-modal-overlay" style={{ zIndex: 100 }}>
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="med-modal max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="med-modal" onClick={(e) => e.stopPropagation()} style={{ width: '550px' }}>
         <div className="px-6 py-4 border-b border-[#2A3B56] flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#E8F0FE]">Nuevo Cliente</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg border border-[#2A3B56] text-[#8CA3E6] hover:text-[#E8F0FE] hover:bg-[#24324A] transition-all flex items-center justify-center">
@@ -122,7 +196,25 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+        <form className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+          <div className="flex justify-center">
+            <div className="relative group">
+              <div className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[#4EA0FC]/40 bg-[#24324A]">
+                {preview ? (
+                  <img src={preview} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xl font-bold text-[#E8F0FE] bg-gradient-to-br from-[#4EA0FC] to-[#19CF8D]">
+                    {initials(form.nombre || '?')}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => fileRef.current?.click()} type="button" className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#4EA0FC] hover:bg-[#3A8FDF] text-white flex items-center justify-center shadow-lg transition-colors">
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+            </div>
+          </div>
+
           <div className="space-y-3">
             <p className="med-section-title">Información del Cliente</p>
             <div>
@@ -174,12 +266,21 @@ function AddClientModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="med-btn-secondary flex-1 text-sm">Cancelar</button>
-            <button type="submit" disabled={saving} className="med-btn-primary flex-[2] text-sm">
+            <button type="button" onClick={() => setShowConfirmCreate(true)} disabled={saving} className="med-btn-primary flex-[2] text-sm">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Creando...</> : <><Plus className="w-4 h-4" /> Confirmar Registro</>}
             </button>
           </div>
         </form>
       </div>
+      {showConfirmCreate && (
+        <ConfirmModal
+          title="Registrar Cliente"
+          message="¿Confirmar el registro de este cliente?"
+          onConfirm={() => { setShowConfirmCreate(false); handleSubmit() }}
+          onCancel={() => setShowConfirmCreate(false)}
+          type="warning"
+        />
+      )}
     </div>
   )
 }
@@ -199,7 +300,20 @@ export function Customers() {
       <div className="p-8 flex-shrink-0">
         <div className="flex items-start justify-between mb-8">
           <div><h1 className="text-2xl font-black text-[#E8F0FE] tracking-tighter">Clientes</h1><span className="text-[10px] font-black px-3 py-1 med-card-dark text-[#8CA3E6] rounded-lg uppercase tracking-widest inline-block mt-2">{clientes.length} Registros</span></div>
-          <button onClick={() => setShowForm(true)} className="med-btn-primary text-[10px] uppercase tracking-widest"><Plus className="w-4 h-4" /> Nuevo Cliente</button>
+          <div className="flex items-center gap-2">
+            <button onClick={async () => {
+              try {
+                const { data } = await api.get('/clientes/'); const items = data.results || data;
+                const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Clientes');
+                ws.columns = [{ header: 'Nombre', key: 'nombre' }, { header: 'Tipo Doc.', key: 'tipo_doc' }, { header: 'N° Documento', key: 'num_doc' }, { header: 'Teléfono', key: 'telefono' }, { header: 'Correo', key: 'correo' }, { header: 'Dirección', key: 'direccion' }];
+                items.forEach((c: any) => ws.addRow({ nombre: c.nombre, tipo_doc: c.tipo_documento, num_doc: c.numero_documento, telefono: c.telefono || '-', correo: c.correo || '-', direccion: c.direccion || '-' }));
+                const buf = await wb.xlsx.writeBuffer(); const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Clientes_${new Date().toISOString().split('T')[0]}.xlsx`; a.click(); URL.revokeObjectURL(url);
+                toast.success('Clientes exportados');
+              } catch { toast.error('Error al exportar') }
+            }} className="p-2.5 med-card-dark hover:border-[#4EA0FC] transition-all"><Download className="w-4 h-4 text-[#8CA3E6]" /></button>
+            <button onClick={() => setShowForm(true)} className="med-btn-primary text-[10px] uppercase tracking-widest"><Plus className="w-4 h-4" /> Nuevo Cliente</button>
+          </div>
         </div>
 
         {showForm && <AddClientModal onClose={() => setShowForm(false)} onSuccess={() => { setShowForm(false); load() }} />}

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AppProvider, useApp } from './context/AppContext'
 import type { UserRole } from './context/AppContext'
 import { LoginScreen } from './components/LoginScreen'
@@ -8,6 +9,8 @@ import { Medications } from './components/Medications'
 import { Sales } from './components/Sales'
 import { Customers } from './components/Customers'
 import { Users } from './components/Users'
+import { ProductSales } from './components/ProductSales'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 const DEFAULT_MODULE: Record<UserRole, string> = {
   Administrador: 'dashboard',
@@ -18,11 +21,11 @@ const DEFAULT_MODULE: Record<UserRole, string> = {
 
 function AppShell() {
   const { user, loading } = useApp()
-  const [module, setModule] = useState('dashboard')
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (user) {
-      setModule(DEFAULT_MODULE[user.role])
+      navigate(DEFAULT_MODULE[user.role], { replace: true })
     }
   }, [user?.role])
 
@@ -38,23 +41,30 @@ function AppShell() {
     return <LoginScreen />
   }
 
-  const active = module
-
   return (
-    <Layout active={active} setActive={setModule}>
-      {active === 'dashboard' && <Dashboard setModule={setModule} />}
-      {active === 'medications' && <Medications />}
-      {active === 'sales' && <Sales />}
-      {active === 'customers' && <Customers />}
-      {active === 'users' && user.role === 'Administrador' && <Users />}
+    <Layout>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Navigate to={DEFAULT_MODULE[user.role]} replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/medications" element={<Medications />} />
+          <Route path="/sales" element={<Sales />} />
+          <Route path="/customers" element={<Customers />} />
+          <Route path="/product-sales" element={<ProductSales />} />
+          <Route path="/users" element={user.role === 'Administrador' ? <Users /> : <Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to={DEFAULT_MODULE[user.role]} replace />} />
+        </Routes>
+      </ErrorBoundary>
     </Layout>
   )
 }
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppShell />
-    </AppProvider>
+    <BrowserRouter>
+      <AppProvider>
+        <AppShell />
+      </AppProvider>
+    </BrowserRouter>
   )
 }

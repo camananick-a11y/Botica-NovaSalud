@@ -38,6 +38,7 @@ class Usuario(AbstractBaseUser):
     usuario = models.CharField(max_length=150, unique=True)
     nombre = models.CharField(max_length=200)
     id_cargo = models.ForeignKey(Cargo, on_delete=models.PROTECT, db_column='id_cargo')
+    imagen_url = models.URLField(max_length=500, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

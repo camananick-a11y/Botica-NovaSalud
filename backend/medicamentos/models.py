@@ -61,6 +61,9 @@ class Medicamento(models.Model):
 
     class Meta:
         db_table = 'medicamento'
+        indexes = [
+            models.Index(fields=['nombre']),
+        ]
 
     def __str__(self):
         return self.nombre
@@ -74,6 +77,9 @@ class StockMedicamento(models.Model):
 
     class Meta:
         db_table = 'stock_medicamento'
+        indexes = [
+            models.Index(fields=['id_medicamento']),
+        ]
 
     def __str__(self):
         return f"{self.id_medicamento.nombre} - Stock: {self.cantidad}"

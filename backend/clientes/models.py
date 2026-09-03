@@ -8,12 +8,17 @@ class Cliente(models.Model):
     direccion = models.TextField(blank=True, null=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
     correo = models.EmailField(max_length=254, blank=True, null=True)
+    imagen_url = models.URLField(max_length=500, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'cliente'
         verbose_name = "Cliente"
         verbose_name_plural = "Clientes"
+        indexes = [
+            models.Index(fields=['nombre']),
+            models.Index(fields=['numero_documento']),
+        ]
 
     def __str__(self):
         return self.nombre

@@ -15,3 +15,7 @@ class IsAlmacenero(permissions.BasePermission):
 class IsSupervisor(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.id_cargo.nombre in ['Administrador', 'Supervisor']
+
+class IsVendedorOrSupervisor(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.id_cargo.nombre in ['Administrador', 'Vendedor', 'Supervisor']

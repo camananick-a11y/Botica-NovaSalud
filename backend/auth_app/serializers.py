@@ -11,14 +11,14 @@ class UsuarioSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Usuario
-        fields = ['id_usuario', 'usuario', 'nombre', 'id_cargo', 'cargo_nombre']
+        fields = ['id_usuario', 'usuario', 'nombre', 'id_cargo', 'cargo_nombre', 'imagen_url']
 
 class UsuarioCreateUpdateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
     class Meta:
         model = Usuario
-        fields = ['usuario', 'nombre', 'id_cargo', 'password']
+        fields = ['usuario', 'nombre', 'id_cargo', 'password', 'imagen_url']
     
     def create(self, validated_data):
         password = validated_data.pop('password')
@@ -39,3 +39,19 @@ class UsuarioCreateUpdateSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     usuario = serializers.CharField()
     password = serializers.CharField(write_only=True)
+
+class PerfilSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    class Meta:
+        model = Usuario
+        fields = ['nombre', 'password', 'imagen_url']
+    
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
