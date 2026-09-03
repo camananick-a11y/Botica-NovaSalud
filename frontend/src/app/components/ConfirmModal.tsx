@@ -15,7 +15,7 @@ export function ConfirmModal({ title, message, onConfirm, onCancel, type = 'dang
   return (
     <div className="med-modal-overlay animate-in fade-in duration-200" style={{ zIndex: 300 }}>
       <div className="absolute inset-0" onClick={onCancel} />
-      <div className="med-modal max-w-[200px] p-3.5 text-center animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+      <div className="med-modal p-3 text-center animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()} style={{ width: '350px' }}>
         <div className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto mb-1.5 ${type === 'danger' ? 'bg-[#EF4444]/15 text-[#EF4444]' : 'bg-[#19CF8D]/15 text-[#19CF8D]'}`}>
           {type === 'danger' ? <ShieldAlert className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
         </div>

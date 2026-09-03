@@ -2,36 +2,34 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from auth_app.permissions import IsVendedor, IsSupervisor
-from django.db.models import Sum, Count
+from auth_app.permissions import IsSupervisor, IsVendedorOrSupervisor
+from django.db.models import Sum, Count, Prefetch
 from django.db.models.functions import TruncMonth
 from .models import Comprobante, DetalleVenta
 from .serializers import ComprobanteSerializer, ComprobanteCreateSerializer
-from medicamentos.models import StockMedicamento, Medicamento
-from datetime import datetime, timedelta
+from medicamentos.models import StockMedicamento
 
 class ComprobanteViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar comprobantes y ventas"""
     queryset = Comprobante.objects.select_related(
         'id_cliente', 'id_usuario'
     ).prefetch_related(
-        'detalles'
+        Prefetch('detalles', queryset=DetalleVenta.objects.select_related('id_medicamento__id_presentacion'))
     ).all().order_by('-fecha')
     
+    def get_queryset(self):
+        qs = super().get_queryset()
+        inicio = self.request.query_params.get('inicio')
+        fin = self.request.query_params.get('fin')
+        if inicio:
+            qs = qs.filter(fecha__gte=inicio)
+        if fin:
+            qs = qs.filter(fecha__lte=fin)
+        return qs
+
     def list(self, request, *args, **kwargs):
         if request.query_params.get('all'):
             self.pagination_class = None
-        
-        inicio = request.query_params.get('inicio')
-        fin = request.query_params.get('fin')
-        if inicio or fin:
-            qs = super().get_queryset()
-            if inicio:
-                qs = qs.filter(fecha__gte=inicio)
-            if fin:
-                qs = qs.filter(fecha__lte=fin)
-            self.queryset = qs
-        
         return super().list(request, *args, **kwargs)
 
     def get_permissions(self):
@@ -39,7 +37,9 @@ class ComprobanteViewSet(viewsets.ModelViewSet):
             return [IsSupervisor()]
         if self.action == 'stock_bajo':
             return [IsAuthenticated()]
-        return [IsVendedor()]
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        return [IsVendedorOrSupervisor()]
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -77,6 +77,26 @@ class ComprobanteViewSet(viewsets.ModelViewSet):
             total_vendido=Sum('cantidad')
         ).order_by('-total_vendido')[:10]
         return Response(detalles)
+
+    @action(detail=False, methods=['get'])
+    def todos_vendidos(self, request):
+        qs = DetalleVenta.objects
+        inicio = request.query_params.get('inicio')
+        fin = request.query_params.get('fin')
+        if inicio:
+            qs = qs.filter(id_comprobante__fecha__gte=inicio)
+        if fin:
+            qs = qs.filter(id_comprobante__fecha__lte=fin)
+        detalles = qs.values(
+            'id_medicamento',
+            'id_medicamento__nombre',
+            'id_medicamento__imagen_url',
+            'id_medicamento__id_presentacion__nombre'
+        ).annotate(
+            total_vendido=Sum('cantidad'),
+            total_recaudado=Sum('subtotal')
+        ).order_by('-total_vendido')
+        return Response(detalles)
         
     @action(detail=False, methods=['get'])
     def stock_bajo(self, request):
@@ -84,8 +104,10 @@ class ComprobanteViewSet(viewsets.ModelViewSet):
         stocks = StockMedicamento.objects.filter(cantidad__lt=umbral).select_related('id_medicamento')
         resultados = [
             {
+                'id_medicamento': stock.id_medicamento.id_medicamento,
                 'medicamento': stock.id_medicamento.nombre,
-                'cantidad_actual': stock.cantidad
+                'imagen_url': stock.id_medicamento.imagen_url,
+                'cantidad_actual': stock.cantidad,
             }
             for stock in stocks
         ]

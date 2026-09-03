@@ -55,15 +55,15 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-[#162033] via-[#1B263B] to-[#162033]">
+    <div className="h-screen flex overflow-y-auto bg-gradient-to-br from-[#162033] via-[#1B263B] to-[#162033]">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-20 -left-20 w-80 h-80 bg-[#4EA0FC]/8 rounded-full blur-3xl" />
         <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-[#19CF8D]/8 rounded-full blur-3xl" />
         <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-[#8CA3E6]/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="w-full max-w-lg">
+      <div className="relative z-10 flex-1 flex items-start justify-center p-4 sm:p-6 lg:p-8 py-10 md:py-16">
+        <div className="w-full max-w-lg my-auto">
           <div className="med-card-dark p-8 sm:p-10">
             <div className="text-center mb-8">
               <div className="flex items-center justify-center gap-3 mb-4">

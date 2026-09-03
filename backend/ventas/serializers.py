@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from .models import Comprobante, DetalleVenta
 from medicamentos.models import StockMedicamento
@@ -21,7 +22,7 @@ class ComprobanteSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Comprobante
-        fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'total', 
+        fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'subtotal', 'igv', 'total', 'metodo_pago',
                   'id_cliente', 'cliente_nombre', 'cliente_tipo_documento', 'cliente_numero_documento', 'cliente_direccion',
                   'id_usuario', 'usuario_nombre', 'usuario_usuario', 'detalles']
 
@@ -36,8 +37,8 @@ class ComprobanteCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Comprobante
-        fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'total', 'id_cliente', 'detalles']
-        read_only_fields = ['id_comprobante', 'total', 'fecha']
+        fields = ['id_comprobante', 'serie', 'tipo', 'fecha', 'subtotal', 'igv', 'total', 'metodo_pago', 'id_cliente', 'detalles']
+        read_only_fields = ['id_comprobante', 'subtotal', 'igv', 'total', 'fecha']
         
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles', [])
@@ -53,8 +54,16 @@ class ComprobanteCreateSerializer(serializers.ModelSerializer):
                     f"Stock insuficiente para {medicamento.nombre}. Disponible: {stock_obj.cantidad if stock_obj else 0}"
                 )
         
-        # Calculate total
-        total = sum(d['cantidad'] * d['precio_unitario'] for d in detalles_data)
+        # Calculate subtotal (sum of detail subtotals)
+        subtotal = sum(d['cantidad'] * d['precio_unitario'] for d in detalles_data)
+        
+        # Calculate IGV (18% only for factura)
+        tipo = validated_data.get('tipo', 'boleta')
+        igv = (subtotal * Decimal('0.18')).quantize(Decimal('0.01')) if tipo == 'factura' else Decimal('0')
+        total = subtotal + igv
+        
+        validated_data['subtotal'] = subtotal
+        validated_data['igv'] = igv
         validated_data['total'] = total
         
         # Create Comprobante

@@ -10,6 +10,7 @@ export interface CurrentUser {
   email: string
   avatar: string
   color: string
+  imagen_url: string | null
 }
 
 interface AppCtxType {
@@ -17,6 +18,9 @@ interface AppCtxType {
   login: (username: string, password: string, expectedRole: string) => Promise<void>
   logout: () => void
   loading: boolean
+  updateProfile: (data: FormData | Record<string, any>) => Promise<void>
+  highlightedProductId: number | null
+  setHighlightedProductId: (id: number | null) => void
 }
 
 const ROLE_MAP: Record<string, UserRole> = {
@@ -42,6 +46,7 @@ const AppCtx = createContext<AppCtxType | null>(null)
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [highlightedProductId, setHighlightedProductId] = useState<number | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -56,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             email: data.usuario + '@novasalud.pe',
             avatar: getInitials(data.nombre),
             color: ROLE_COLORS[role],
+            imagen_url: data.imagen_url || null,
           })
         })
         .catch(() => {
@@ -89,6 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       email: me.data.usuario + '@novasalud.pe',
       avatar: getInitials(me.data.nombre),
       color: ROLE_COLORS[role],
+      imagen_url: me.data.imagen_url || null,
     })
   }
 
@@ -98,8 +105,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const refreshUser = () => {
+    api.get('/auth/usuarios/me/')
+      .then(({ data }) => {
+        const role = ROLE_MAP[data.cargo_nombre] || 'Vendedor'
+        setUser({
+          id: data.id_usuario,
+          name: data.nombre,
+          role,
+          email: data.usuario + '@novasalud.pe',
+          avatar: getInitials(data.nombre),
+          color: ROLE_COLORS[role],
+          imagen_url: data.imagen_url || null,
+        })
+      })
+      .catch(() => {})
+  }
+
+  const updateProfile = async (data: FormData | Record<string, any>) => {
+    await api.patch('/auth/usuarios/perfil/', data, {
+      headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+    })
+    refreshUser()
+  }
+
   return (
-    <AppCtx.Provider value={{ user, login, logout, loading }}>
+    <AppCtx.Provider value={{ user, login, logout, loading, updateProfile, highlightedProductId, setHighlightedProductId }}>
       {children}
     </AppCtx.Provider>
   )

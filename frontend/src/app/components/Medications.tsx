@@ -1,8 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Search, X, Plus, Package2, AlertTriangle, Pill, Camera, Loader2, Save, Edit3, Trash2, Image as ImageIcon, TrendingUp, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Search, X, Plus, Package2, AlertTriangle, Pill, Camera, Loader2, Save, Edit3, Trash2, Image as ImageIcon, TrendingUp, AlertCircle, ChevronLeft, ChevronRight, Lock, Download, Settings2, ChevronDown } from 'lucide-react'
 import api from '../../api/axios'
 import { supabase } from '../../api/supabase'
 import { ConfirmModal } from './ConfirmModal'
+import { CardSkeleton } from './Skeleton'
+import { useApp } from '../context/AppContext'
+import toast from 'react-hot-toast'
+import ExcelJS from 'exceljs'
 
 function BadgeCategory({ category }: { category: string }) {
   return (
@@ -123,16 +128,81 @@ function PaginatedSelect({ label, value, onChange, items, idField, onCreate }: {
   )
 }
 
+const DROPDOWN_PAGE_SIZE = 5
+
+function FilterDropdown({ items, value, onChange }: { items: string[]; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(0)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const totalPages = Math.max(1, Math.ceil(items.length / DROPDOWN_PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const start = safePage * DROPDOWN_PAGE_SIZE
+  const visibleItems = items.slice(start, start + DROPDOWN_PAGE_SIZE)
+  const selectedLabel = value || 'Todas las categorías'
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(!open)}
+        className="med-select !w-auto flex items-center gap-2 pr-2 cursor-pointer">
+        <span className="flex-1 min-w-0 truncate">{selectedLabel}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-[#5F7FB8] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 min-w-[200px] bg-[#1B263B] border border-[#2A3B56] rounded-xl shadow-2xl overflow-hidden z-50">
+          <div className="max-h-56 overflow-y-auto scrollbar-thin">
+            <button onClick={() => { onChange(''); setOpen(false); setPage(0) }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-all border-b border-[#2A3B56]/50 last:border-b-0 ${!value ? 'bg-[#4EA0FC]/15 text-[#E8F0FE] font-semibold border-l-2 border-l-[#4EA0FC]' : 'text-[#B5CEFF] hover:bg-[#24324A]'}`}>
+              Todas las categorías
+            </button>
+            {visibleItems.map((cat) => (
+              <button key={cat} onClick={() => { onChange(cat); setOpen(false); setPage(0) }}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-all border-b border-[#2A3B56]/50 last:border-b-0 ${value === cat ? 'bg-[#4EA0FC]/15 text-[#E8F0FE] font-semibold border-l-2 border-l-[#4EA0FC]' : 'text-[#B5CEFF] hover:bg-[#24324A]'}`}>
+                {cat}
+              </button>
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-2 py-1.5 border-t border-[#2A3B56] bg-[#162033]">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0}
+                className="p-1 rounded text-[#8CA3E6] hover:text-[#E8F0FE] disabled:opacity-30 transition-all">
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[9px] font-medium text-[#5F7FB8]">{safePage + 1} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1}
+                className="p-1 rounded text-[#8CA3E6] hover:text-[#E8F0FE] disabled:opacity-30 transition-all">
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface MedModalProps {
   med: any
   onClose: () => void
   onUpdate: () => void
+  canEdit: boolean
 }
 
-function MedModal({ med, onClose, onUpdate }: MedModalProps) {
+function MedModal({ med, onClose, onUpdate, canEdit }: MedModalProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [showConfirmSave, setShowConfirmSave] = useState(false)
+  const [showStockAdjust, setShowStockAdjust] = useState(false)
+  const [stockAdjustValue, setStockAdjustValue] = useState(0)
   const [loading, setLoading] = useState(false)
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -164,7 +234,7 @@ function MedModal({ med, onClose, onUpdate }: MedModalProps) {
     } catch (e) { console.error(e) }
   }
 
-  useEffect(() => { if (isEditing) fetchAuxData() }, [isEditing])
+  useEffect(() => { if (isEditing && canEdit) fetchAuxData() }, [isEditing, canEdit])
 
   if (!med) return null
 
@@ -182,7 +252,8 @@ function MedModal({ med, onClose, onUpdate }: MedModalProps) {
       }
       await api.put(`/medicamentos/${med.id_medicamento}/`, { ...editForm, precio: parseFloat(editForm.precio), stock: editForm.stock, imagen_url: finalImageUrl })
       onUpdate(); setIsEditing(false); setSelectedFile(null)
-    } catch (err: any) { alert('Error: ' + err.message) } finally { setLoading(false) }
+      toast.success('Medicamento actualizado')
+    } catch (err: any) { toast.error(err.message) } finally { setLoading(false) }
   }
 
   if (!isEditing) {
@@ -239,23 +310,62 @@ function MedModal({ med, onClose, onUpdate }: MedModalProps) {
                   <p className="text-[9px] font-semibold text-[#8CA3E6] uppercase tracking-wider mb-1">Stock Disponible</p>
                   <p className="text-xl font-bold text-[#E8F0FE]">{med.stock ?? 0} {med.unidad_nombre || 'uds'}</p>
                 </div>
-                <BadgeStock stock={med.stock ?? 0} />
+                <div className="flex items-center gap-2">
+                  {canEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); setStockAdjustValue(med.stock ?? 0); setShowStockAdjust(true) }}
+                      className="p-2 rounded-lg bg-[#4EA0FC]/10 border border-[#4EA0FC]/30 text-[#4EA0FC] hover:bg-[#4EA0FC]/20 transition-all">
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <BadgeStock stock={med.stock ?? 0} />
+                </div>
               </div>
             </div>
 
             <div className="px-6 py-4 border-t border-[#2A3B56] bg-[#162033] flex gap-3">
-              <button onClick={() => setIsEditing(true)} className="med-btn-primary flex-1 text-sm">
-                <Edit3 className="w-4 h-4" /> Editar
-              </button>
-              <button onClick={() => setShowConfirmDelete(true)} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#EF4444]/30 text-[#EF4444] hover:bg-[#EF4444]/10 font-medium text-sm transition-all active:scale-[0.98]">
-                <Trash2 className="w-4 h-4" /> Eliminar
-              </button>
+              {canEdit ? (
+                <>
+                  <button onClick={() => setIsEditing(true)} className="med-btn-primary flex-1 text-sm">
+                    <Edit3 className="w-4 h-4" /> Editar
+                  </button>
+                  <button onClick={() => setShowConfirmDelete(true)} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#EF4444]/30 text-[#EF4444] hover:bg-[#EF4444]/10 font-medium text-sm transition-all active:scale-[0.98]">
+                    <Trash2 className="w-4 h-4" /> Eliminar
+                  </button>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#24324A] text-[#8CA3E6] text-xs font-medium">
+                  <Lock className="w-3.5 h-3.5" /> Solo lectura — sin permisos de edición
+                </div>
+              )}
+            </div>
+          </div>
+      </div>
+      {showConfirmDelete && <ConfirmModal title="Eliminar Medicamento" message={`¿Confirmar eliminación de "${med.nombre}"?`} onConfirm={async () => { await api.delete(`/medicamentos/${med.id_medicamento}/`); onUpdate(); onClose() }} onCancel={() => setShowConfirmDelete(false)} />}
+      {showStockAdjust && (
+        <div className="med-modal-overlay" style={{ zIndex: 200 }}>
+          <div className="absolute inset-0" onClick={() => setShowStockAdjust(false)} />
+          <div className="med-modal max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-[#2A3B56]">
+              <h3 className="text-lg font-bold text-[#E8F0FE]">Ajustar Stock</h3>
+              <p className="text-[10px] text-[#8CA3E6] mt-1">{med.nombre} — Stock actual: <strong className="text-[#E8F0FE]">{med.stock ?? 0}</strong></p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="med-label">Nuevo stock</label>
+                <input type="number" min={0} value={stockAdjustValue} onChange={(e) => setStockAdjustValue(parseInt(e.target.value) || 0)}
+                  className="med-input" placeholder="Nueva cantidad" autoFocus />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowStockAdjust(false)} className="med-btn-secondary flex-1 text-sm">Cancelar</button>
+                <button onClick={async () => { try { await api.post('/medicamentos/stock/ajustar/', { id_medicamento: med.id_medicamento, nuevo_stock: stockAdjustValue }); toast.success('Stock actualizado'); setShowStockAdjust(false); onUpdate() } catch { toast.error('Error al ajustar stock') } }}
+                  className="med-btn-primary flex-[2] text-sm"><Save className="w-4 h-4" /> Ajustar</button>
+              </div>
             </div>
           </div>
         </div>
-        {showConfirmDelete && <ConfirmModal title="Eliminar Medicamento" message={`¿Confirmar eliminación de "${med.nombre}"?`} onConfirm={async () => { await api.delete(`/medicamentos/${med.id_medicamento}/`); onUpdate(); onClose() }} onCancel={() => setShowConfirmDelete(false)} />}
-      </>
-    )
+      )}
+    </>
+  )
   }
 
   return (
@@ -287,7 +397,7 @@ function MedModal({ med, onClose, onUpdate }: MedModalProps) {
                     <span className="text-xs font-medium text-[#8CA3E6]">Selecciona una imagen</span>
                   </div>
                 )}
-                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)) }}} />
+                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 2 * 1024 * 1024) { toast.error('La imagen no debe superar 2MB'); return } setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)) }} />
               </div>
             </div>
 
@@ -348,20 +458,22 @@ function MedModal({ med, onClose, onUpdate }: MedModalProps) {
   )
 }
 
-function AddMedModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
+function AddMedModal({ onClose, onSuccess, canEdit }: { onClose: () => void, onSuccess: () => void, canEdit: boolean }) {
   const [labs, setLabs] = useState<any[]>([]); const [cats, setCats] = useState<any[]>([]); const [pres, setPres] = useState<any[]>([]); const [units, setUnits] = useState<any[]>([])
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null); const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [formData, setFormData] = useState({ nombre: '', precio: '', id_laboratorio: '', id_categoria: '', id_presentacion: '', id_unidad: '', cantidad_inicial: '0' })
+  const [showConfirmCreate, setShowConfirmCreate] = useState(false)
 
   useEffect(() => {
+    if (!canEdit) { setLoading(false); return }
     Promise.all([api.get('/medicamentos/laboratorios/'), api.get('/medicamentos/categorias/'), api.get('/medicamentos/presentaciones/'), api.get('/medicamentos/unidades/')])
       .then(([l, c, p, u]) => { setLabs(l.data); setCats(c.data); setPres(p.data); setUnits(u.data) })
       .finally(() => setLoading(false))
-  }, [])
+  }, [canEdit])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+  async function handleSubmit() {
+    setSaving(true)
     try {
       let imageUrl = null
       if (selectedFile) {
@@ -374,7 +486,8 @@ function AddMedModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: (
       }
       await api.post('/medicamentos/', { ...formData, precio: parseFloat(formData.precio), cantidad_inicial: parseInt(formData.cantidad_inicial), imagen_url: imageUrl })
       onSuccess()
-    } catch (err: any) { alert('Error') } finally { setSaving(false) }
+      toast.success('Medicamento registrado exitosamente')
+    } catch (err: any) { toast.error('Error al registrar medicamento') } finally { setSaving(false) }
   }
 
   return (
@@ -388,7 +501,7 @@ function AddMedModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: (
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+        <form className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
           <div className="space-y-2">
             <label className="med-label">Imagen del Medicamento</label>
             <div className="relative h-36 bg-[#24324A] rounded-xl border-2 border-dashed border-[#2A3B56] flex flex-col items-center justify-center group overflow-hidden hover:border-[#4EA0FC]/50 transition-all">
@@ -405,7 +518,7 @@ function AddMedModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: (
                   <span className="text-xs font-medium text-[#8CA3E6]">Selecciona una imagen</span>
                 </div>
               )}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)) }}} />
+              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 2 * 1024 * 1024) { toast.error('La imagen no debe superar 2MB'); return } setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)) }} />
             </div>
           </div>
 
@@ -450,36 +563,72 @@ function AddMedModal({ onClose, onSuccess }: { onClose: () => void, onSuccess: (
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="med-btn-secondary flex-1 text-sm">Cancelar</button>
-            <button type="submit" disabled={saving} className="med-btn-primary flex-[2] text-sm">
+            <button type="button" onClick={() => setShowConfirmCreate(true)} disabled={saving} className="med-btn-primary flex-[2] text-sm">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Creando...</> : <><Plus className="w-4 h-4" /> Crear Medicamento</>}
             </button>
           </div>
         </form>
       </div>
+      {showConfirmCreate && (
+        <ConfirmModal
+          title="Registrar Medicamento"
+          message="¿Confirmar el registro de este medicamento?"
+          onConfirm={() => { setShowConfirmCreate(false); handleSubmit() }}
+          onCancel={() => setShowConfirmCreate(false)}
+          type="warning"
+        />
+      )}
     </div>
   )
 }
 
 export function Medications() {
+  const { user, highlightedProductId, setHighlightedProductId } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const canEdit = user?.role === 'Administrador' || user?.role === 'Almacenero'
   const [medicamentos, setMedicamentos] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<string>('')
-  const [stockFilter, setStockFilter] = useState<'todos' | 'bajo' | 'disponible'>('todos')
+  const [stockFilter, setStockFilter] = useState<'todos' | 'bajo' | 'disponible' | 'agotados'>('todos')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
 
-  const fetchMedicamentos = () => { setLoading(true); api.get('/medicamentos/?all=true').then(({ data }) => { setMedicamentos(data.results || data) }).finally(() => setLoading(false)) }
+  const fetchMedicamentos = () => { setLoading(true); api.get('/medicamentos/?all=true').then(({ data }) => { setMedicamentos(data.results || data); setPage(1) }).finally(() => setLoading(false)) }
   useEffect(() => { fetchMedicamentos() }, [])
+
+  useEffect(() => {
+    if (highlightedProductId && medicamentos.length > 0) {
+      const exists = medicamentos.some(m => m.id_medicamento === highlightedProductId)
+      if (exists) {
+        setSelectedId(highlightedProductId)
+        setHighlightedProductId(null)
+      }
+    }
+  }, [highlightedProductId, medicamentos])
+
+  useEffect(() => {
+    const state = location.state as { stockFilter?: 'bajo' | 'agotados' } | null
+    if (state?.stockFilter) {
+      setStockFilter(state.stockFilter)
+      navigate('.', { replace: true, state: {} })
+    }
+  }, [])
 
   const filtered = useMemo(() => {
     let result = medicamentos.filter((m) => !search || m.nombre.toLowerCase().includes(search.toLowerCase()) || (m.laboratorio_nombre || '').toLowerCase().includes(search.toLowerCase()))
     if (categoryFilter) result = result.filter(m => m.categoria_nombre === categoryFilter)
-    if (stockFilter === 'bajo') result = result.filter(m => (m.stock ?? 0) <= 10)
+    if (stockFilter === 'bajo') result = result.filter(m => (m.stock ?? 0) > 0 && (m.stock ?? 0) <= 10)
+    if (stockFilter === 'agotados') result = result.filter(m => (m.stock ?? 0) === 0)
     if (stockFilter === 'disponible') result = result.filter(m => (m.stock ?? 0) > 10)
     return result
   }, [search, medicamentos, stockFilter, categoryFilter])
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
   const selectedMed = useMemo(() => medicamentos.find(m => m.id_medicamento === selectedId), [selectedId, medicamentos])
   const categories = useMemo(() => [...new Set(medicamentos.map(m => m.categoria_nombre).filter(Boolean))], [medicamentos])
 
@@ -496,11 +645,29 @@ export function Medications() {
               <p className="text-[10px] font-medium text-[#8CA3E6]">Gestión de medicamentos</p>
             </div>
           </div>
-          <button onClick={() => setIsAdding(true)}
-            className="med-btn-primary text-sm">
-            <Plus className="w-4 h-4" />
-            Nuevo Medicamento
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={async () => {
+              try {
+                const { data } = await api.get('/medicamentos/?all=true');
+                const items = data.results || data;
+                const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Inventario');
+                ws.columns = [{ header: 'Nombre', key: 'nombre' }, { header: 'Laboratorio', key: 'laboratorio' }, { header: 'Categoría', key: 'categoria' }, { header: 'Presentación', key: 'presentacion' }, { header: 'Precio', key: 'precio' }, { header: 'Stock', key: 'stock' }];
+                items.forEach((m: any) => ws.addRow({ nombre: m.nombre, laboratorio: m.laboratorio_nombre, categoria: m.categoria_nombre, presentacion: m.presentacion_nombre, precio: m.precio, stock: m.stock ?? 0 }));
+                const buf = await wb.xlsx.writeBuffer(); const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Inventario_${new Date().toISOString().split('T')[0]}.xlsx`; a.click(); URL.revokeObjectURL(url);
+                toast.success('Inventario exportado');
+              } catch { toast.error('Error al exportar') }
+            }} className="p-2.5 med-card-dark hover:border-[#4EA0FC] transition-all"><Download className="w-4 h-4 text-[#8CA3E6]" /></button>
+            {canEdit ? (
+              <button onClick={() => setIsAdding(true)} className="med-btn-primary text-sm">
+                <Plus className="w-4 h-4" /> Nuevo Medicamento
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#24324A] text-[#8CA3E6] text-[10px] font-bold uppercase tracking-widest">
+                <Lock className="w-3.5 h-3.5" /> Solo lectura
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -521,15 +688,10 @@ export function Medications() {
             <option value="todos">Todos</option>
             <option value="disponible">Stock Disponible</option>
             <option value="bajo">Stock Bajo</option>
+            <option value="agotados">Agotados</option>
           </select>
 
-          {categories.length > 0 && (
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
-              className="med-select !w-auto">
-              <option value="">Todas las categorías</option>
-              {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-          )}
+          {categories.length > 0 && <FilterDropdown items={categories} value={categoryFilter} onChange={setCategoryFilter} />}
 
           <span className="text-xs font-medium text-[#5F7FB8] whitespace-nowrap">{filtered.length} de {medicamentos.length} productos</span>
         </div>
@@ -537,11 +699,8 @@ export function Medications() {
 
       <div className="flex-1 overflow-y-auto px-6 sm:px-8 pb-8 scrollbar-thin">
         {loading ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <Loader2 className="w-7 h-7 text-[#4EA0FC] animate-spin mx-auto mb-3" />
-              <p className="text-sm font-medium text-[#8CA3E6]">Cargando medicamentos...</p>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-2">
+            {Array.from({ length: 10 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : filtered.length === 0 ? (
           <div className="h-full flex items-center justify-center">
@@ -552,7 +711,7 @@ export function Medications() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pt-2">
-            {filtered.map((med) => {
+            {paginated.map((med) => {
               const isLow = (med.stock ?? 0) > 0 && (med.stock ?? 0) <= 10
               const isOut = (med.stock ?? 0) === 0
 
@@ -610,10 +769,23 @@ export function Medications() {
             })}
           </div>
         )}
+        {totalPages > 1 && !loading && (
+          <div className="flex items-center justify-center gap-4 mt-6 pb-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+              className="p-2 rounded-lg bg-[#24324A] border border-[#2A3B56] text-[#8CA3E6] hover:text-[#E8F0FE] disabled:opacity-30 transition-all">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-medium text-[#8CA3E6]">{page} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+              className="p-2 rounded-lg bg-[#24324A] border border-[#2A3B56] text-[#8CA3E6] hover:text-[#E8F0FE] disabled:opacity-30 transition-all">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      <MedModal med={selectedMed} onClose={() => setSelectedId(null)} onUpdate={fetchMedicamentos} />
-      {isAdding && <AddMedModal onClose={() => setIsAdding(false)} onSuccess={() => { setIsAdding(false); fetchMedicamentos() }} />}
+      <MedModal med={selectedMed} onClose={() => setSelectedId(null)} onUpdate={fetchMedicamentos} canEdit={canEdit} />
+      {isAdding && <AddMedModal onClose={() => setIsAdding(false)} onSuccess={() => { setIsAdding(false); fetchMedicamentos() }} canEdit={canEdit} />}
     </div>
   )
 }

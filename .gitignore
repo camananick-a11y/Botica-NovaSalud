@@ -122,3 +122,6 @@ app/.env
 nodemon.json
 
 scratch/__pycache__/
+
+# Archivos exportados (boletas, facturas, reportes)
+exports-del-proyecto/
