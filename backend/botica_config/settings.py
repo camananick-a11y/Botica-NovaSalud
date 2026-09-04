@@ -32,7 +32,7 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.getenv(
     'ALLOWED_HOSTS',
-    'localhost,127.0.0.1,.onrender.com,.vercel.app,*'
+    'botica-novasalud-api.onrender.com,.onrender.com,.vercel.app,localhost,127.0.0.1,*'
 ).split(',')
 
 
